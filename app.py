@@ -12,24 +12,25 @@ tf.title("🚀 Ultra Trading Scanner")
 with tf.expander("ℹ️ SÅ HÄR FUNGERAR APPEN (Klicka för att öppna)"):
     tf.markdown("""
     ### Hur daytrading-strategin fungerar:
-    Skanner är nu inställd på **15-minutersintervall** för att hitta snabba rörelser under handelsdagen.
+    Skanner är inställd på **15-minutersintervall** för att hitta snabba rörelser under handelsdagen.
     
     1. **RSI (14):** Letar efter extrema dippar under 35 på kort sikt.
     2. **RVOL (Relativ Volym):** Mäter om volymen just nu är minst 50% högre än genomsnittet för samma tidpunkt. Hög RVOL = Institutionellt intresse.
-    3. **Gap %:** Visar hur mycket aktien har hoppat upp eller ner vid morgonens öppning jämfört med gårdagens stängning.
+    3. **Gap %:** Visar hur mycket aktien har hoppat upp eller ner vid morgonens öppning.
     4. **MACD:** Bekräftar att momentum har skiftat över till köparnas fördel på intradagsgrafen.
     """)
 
-# Stabil aktielista för daytrading
+# UTÖKAD LISTA: Handplockade, högvolatila trading-aktier (SE + USA)
 AKTIER = [
-    # --- SVERIGE (OMX) ---
+    # --- SVERIGE (Hög omsättning & Volatilitet) ---
     "VOLV-B.ST", "AZN.ST", "EVO.ST", "INVE-B.ST", "SEB-A.ST", "SHB-A.ST", "SWED-A.ST", "ERIC-B.ST", "TELIA.ST",
     "SAND.ST", "ATCO-A.ST", "SKF-B.ST", "BOL.ST", "HEXA-B.ST", "ASSA-B.ST", "NIBE-B.ST", "SBB-B.ST", "SINCH.ST",
-    "SAAB-B.ST", "GETI-B.ST", "HM-B.ST", "BALD-B.ST", "CAST.ST", "SSAB-B.ST",
-    # --- USA (S&P 500 / NASDAQ) ---
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "LLY", "V",
-    "UNH", "JPM", "MA", "AVGO", "HD", "XOM", "COST", "AMD", "NFLX",
-    "ADBE", "CRM", "INTC", "CSCO", "PANW", "PLTR", "COIN", "UBER"
+    "SAAB-B.ST", "GETI-B.ST", "HM-B.ST", "KINV-B.ST", "ELUX-B.ST", "BALD-B.ST", "CAST.ST", "SSAB-B.ST", "SCA-B.ST",
+    # --- USA (Teknik, AI, Krypto & Högvolatila tunga pjäser) ---
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "LLY", "V", "AVGO",
+    "AMD", "NFLX", "CRM", "INTC", "CSCO", "PLTR", "COIN", "UBER", "SMCI", "MSTR",
+    "PANW", "SNOW", "MARA", "RIOT", "SOFI", "BABA", "PDD", "NIO", "XPEV", "PYPL",
+    "SQ", "DIS", "BA", "CAT", "GE", "F", "GM", "ABNB", "QCOM", "MU"
 ]
 
 # Initiera minne i sessionen
@@ -52,7 +53,6 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
         progress_bar.progress((i + 1) / len(AKTIER))
         
         try:
-            # Hämtar 15-minutersstaplar (Intradag för daytrading)
             df = yf.download(ticker, period="30d", interval="15m", progress=False)
             
             if df.empty or len(df) < 30:
@@ -64,12 +64,12 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
             volume_series = pd.Series(df['Volume'].dropna().values.flatten())
             open_series = pd.Series(df['Open'].dropna().values.flatten())
             
-            # Beräkningar för Daytrading
+            if len(close_series) < 15:
+                continue
+                
+            # Beräkningar
             df_rsi = ta.momentum.rsi(close_series, window=14)
-            
-            # 10-perioders snittvolym på 15-minutersgrafen
             df_vol_snitt = volume_series.rolling(window=10).mean()
-            
             macd_obj = ta.trend.MACD(close_series)
             df_macd = macd_obj.macd()
             df_macd_sig = macd_obj.macd_signal()
@@ -83,15 +83,13 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
             m = float(df_macd.iloc[-1])
             s = float(df_macd_sig.iloc[-1])
             
-            # Steg 2: Beräkna RVOL (Relativ Volym)
+            # Beräkna RVOL
             rvol = vol / v_snitt if v_snitt > 0 else 1.0
-            volym_text = f"Hög 🚀 ({rvol:.1f}x)" if rvol >= 1.5 else "Normal ⚪"
             
-            # Steg 3: Beräkna Gap % (Jämför första stapeln idag med stängning igår)
-            # Vi förenklar dagsrörelsen till förändring från öppning på intradag
+            # Beräkna dagsrörelse
             dags_utveckling = ((pris - öppning) / öppning) * 100
             
-            # MACD korsningar på 15-minutersnivå
+            # MACD korsningar
             m_igår = float(df_macd.iloc[-2])
             s_igår = float(df_macd_sig.iloc[-2])
             macd_korsat_upp = m > s and m_igår <= s_igår
@@ -113,7 +111,7 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
                 "Trend (MACD)": macd_status
             })
 
-            # Kolla guld-kriterier (Kräver nu hög RVOL för köp)
+            # Kolla guld-kriterier
             if rsi <= 35 and rvol >= 1.5 and macd_korsat_upp:
                 temp_köp.append({
                     "Aktie": ticker, 
@@ -142,36 +140,35 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
     progress_bar.empty()
     status_text.empty()
 
-# --- PRESENTATION PÅ SKÄRMEN (OFÖRÄNDRAT UTSEENDE) ---
+# --- PRESENTATION PÅ SKÄRMEN ---
 
 if tf.session_state.har_skannat:
     
-    # 2. SEKTION: ULTRA-KÖP
+    # KÖP
     tf.success("🌟 FÖRESLAGNA ULTRA-KÖP")
     if tf.session_state.ultra_köp:
         tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
     else:
         tf.info("Inga aktier uppfyller alla tre köpkriterier just nu.")
         
-    # 3. SEKTION: ULTRA-SÄLJ
+    # SÄLJ
     tf.error("🚨 FÖRESLAGNA SÄLJ/TA VINST")
     if tf.session_state.ultra_sälj:
         tf.dataframe(pd.DataFrame(tf.session_state.ultra_sälj), use_container_width=True)
     else:
         tf.info("Inga säljsignaler just nu.")
         
-    # 4. SEKTION: DETALJERAD MARKNADSÖVERSIKT
+    # MARKNADSÖVERSIKT
     tf.subheader("📊 Komplett Marknadsöversikt")
     tf.write("Sorterad efter lägst RSI (mest översåld) först.")
     if tf.session_state.alla_aktier:
-        # Sorterar på den nya kolumnen "RSI (15m)"
         df_visa = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI (15m)", ascending=True)
         tf.dataframe(df_visa, use_container_width=True, height=500)
 
 else:
     tf.info("Klicka på knappen ovan för att starta skanningen.")
 
-# 5. SEKTION: TRADE-KALKYLATOR
+# TRADE-KALKYLATOR
 tf.write("---")
 tf.subheader("💼 Trade-Kalkylator")
 kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
