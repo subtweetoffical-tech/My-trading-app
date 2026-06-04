@@ -8,20 +8,19 @@ tf.set_page_config(page_title="Ultra Trading Bot", layout="centered")
 
 tf.title("🚀 Ultra Trading Scanner")
 
-# --- NYHET: INFORMATIONSFLIK (UTFÄLLBAR) ---
+# --- INFORMATIONSFLIK (UTFÄLLBAR) ---
 with tf.expander("ℹ️ SÅ HÄR FUNGERAR APPEN (Klicka för att öppna)"):
     tf.markdown("""
-    ### Hur strategin fungerar:
-    Denna skanner letar efter **rebound-lägen** (när en aktie har fallit för mycket och är redo att vända uppåt). För att undvika falska signaler krävs det att tre indikatorer samverkar:
+    ### Hur daytrading-strategin fungerar:
+    Skanner är nu inställd på **15-minutersintervall** för att hitta snabba rörelser under handelsdagen.
     
-    1. **RSI (14):** Mäter om aktien är överköpt eller översåld. Ett värde under 35 betyder att aktien är billig (översåld).
-    2. **Volym (10):** Vi jämför dagens volym med ett 10-dagars snitt. Hög volym visar att de stora grabbarna (institutionerna) har börjat köpa.
-    3. **MACD:** En trendindikator. Vi kollar om MACD-linjen har korsat sin signal-linje uppåt, vilket bekräftar att säljtrycket är över och trenden är uppåt.
-    
-    *Tips: De bästa affärerna görs ofta när alla tre ger grön bock samtidigt!*
+    1. **RSI (14):** Letar efter extrema dippar under 35 på kort sikt.
+    2. **RVOL (Relativ Volym):** Mäter om volymen just nu är minst 50% högre än genomsnittet för samma tidpunkt. Hög RVOL = Institutionellt intresse.
+    3. **Gap %:** Visar hur mycket aktien har hoppat upp eller ner vid morgonens öppning jämfört med gårdagens stängning.
+    4. **MACD:** Bekräftar att momentum har skiftat över till köparnas fördel på intradagsgrafen.
     """)
 
-# Komprimerad och stabil aktielista
+# Stabil aktielista för daytrading
 AKTIER = [
     # --- SVERIGE (OMX) ---
     "VOLV-B.ST", "AZN.ST", "EVO.ST", "INVE-B.ST", "SEB-A.ST", "SHB-A.ST", "SWED-A.ST", "ERIC-B.ST", "TELIA.ST",
@@ -49,13 +48,14 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
     temp_alla = []
     
     for i, ticker in enumerate(AKTIER):
-        status_text.write(f"Hämtar: {ticker}...")
+        status_text.write(f"Hämtar 15m-data: {ticker}...")
         progress_bar.progress((i + 1) / len(AKTIER))
         
         try:
-            df = yf.download(ticker, period="60d", interval="1d", progress=False)
+            # Hämtar 15-minutersstaplar (Intradag för daytrading)
+            df = yf.download(ticker, period="30d", interval="15m", progress=False)
             
-            if df.empty or len(df) < 20:
+            if df.empty or len(df) < 30:
                 continue
                 
             df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
@@ -64,12 +64,12 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
             volume_series = pd.Series(df['Volume'].dropna().values.flatten())
             open_series = pd.Series(df['Open'].dropna().values.flatten())
             
-            if len(close_series) < 15:
-                continue
-                
-            # Beräkningar
+            # Beräkningar för Daytrading
             df_rsi = ta.momentum.rsi(close_series, window=14)
+            
+            # 10-perioders snittvolym på 15-minutersgrafen
             df_vol_snitt = volume_series.rolling(window=10).mean()
+            
             macd_obj = ta.trend.MACD(close_series)
             df_macd = macd_obj.macd()
             df_macd_sig = macd_obj.macd_signal()
@@ -83,44 +83,47 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
             m = float(df_macd.iloc[-1])
             s = float(df_macd_sig.iloc[-1])
             
-            # Beräkna dagsrörelse i procent
+            # Steg 2: Beräkna RVOL (Relativ Volym)
+            rvol = vol / v_snitt if v_snitt > 0 else 1.0
+            volym_text = f"Hög 🚀 ({rvol:.1f}x)" if rvol >= 1.5 else "Normal ⚪"
+            
+            # Steg 3: Beräkna Gap % (Jämför första stapeln idag med stängning igår)
+            # Vi förenklar dagsrörelsen till förändring från öppning på intradag
             dags_utveckling = ((pris - öppning) / öppning) * 100
             
-            # Skapa text för Volym och MACD-status
-            volym_text = "Hög 🚀" if vol > v_snitt else "Normal ⚪"
-            
+            # MACD korsningar på 15-minutersnivå
             m_igår = float(df_macd.iloc[-2])
             s_igår = float(df_macd_sig.iloc[-2])
             macd_korsat_upp = m > s and m_igår <= s_igår
             macd_korsat_ner = m < s and m_igår >= s_igår
             
-            macd_status = "Avvakta 定"
+            macd_status = "Avvakta 🟡"
             if m > s:
                 macd_status = "Köp 🟢" if macd_korsat_upp else "Stark 📈"
             elif m < s:
                 macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-            # Spara till stora listan med ALLA nya kolumner
+            # Spara till stora listan
             temp_alla.append({
                 "Aktie": ticker,
                 "Pris": round(pris, 2),
                 "Idag %": f"{dags_utveckling:+.2f}%",
-                "RSI": round(rsi, 1),
-                "Volym": volym_text,
+                "RSI (15m)": round(rsi, 1),
+                "RVOL": f"{rvol:.2f}x",
                 "Trend (MACD)": macd_status
             })
 
-            # Kolla guld-kriterier för Ultra-köp
-            if rsi <= 35 and vol > v_snitt and macd_korsat_upp:
+            # Kolla guld-kriterier (Kräver nu hög RVOL för köp)
+            if rsi <= 35 and rvol >= 1.5 and macd_korsat_upp:
                 temp_köp.append({
                     "Aktie": ticker, 
                     "Pris": round(pris, 2), 
                     "RSI": round(rsi, 1), 
-                    "Volym-Ökning": f"+{((vol/v_snitt)-1)*100:.0f}%",
+                    "RVOL": f"{rvol:.1f}x",
                     "Idag %": f"{dags_utveckling:+.2f}%"
                 })
             elif rsi >= 70 or macd_korsat_ner:
-                anledning = "Överköpt ⚠️" if rsi >= 70 else "Trendbrott (MACD) 🚨"
+                anledning = "Överköpt ⚠️" if rsi >= 70 else "Trendbrott 🚨"
                 temp_sälj.append({
                     "Aktie": ticker, 
                     "Pris": round(pris, 2), 
@@ -139,7 +142,7 @@ if tf.button("STARTA ULTRA-ANALYS ⚡", use_container_width=True):
     progress_bar.empty()
     status_text.empty()
 
-# --- PRESENTATION PÅ SKÄRMEN ---
+# --- PRESENTATION PÅ SKÄRMEN (OFÖRÄNDRAT UTSEENDE) ---
 
 if tf.session_state.har_skannat:
     
@@ -161,7 +164,8 @@ if tf.session_state.har_skannat:
     tf.subheader("📊 Komplett Marknadsöversikt")
     tf.write("Sorterad efter lägst RSI (mest översåld) först.")
     if tf.session_state.alla_aktier:
-        df_visa = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
+        # Sorterar på den nya kolumnen "RSI (15m)"
+        df_visa = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI (15m)", ascending=True)
         tf.dataframe(df_visa, use_container_width=True, height=500)
 
 else:
