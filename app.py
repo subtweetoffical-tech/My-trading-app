@@ -7,31 +7,26 @@ import ta
 tf.set_page_config(page_title="Ultra Trading Bot", layout="centered")
 
 tf.title("🚀 Ultra Trading Scanner")
-tf.write("RSI + Volym + MACD Filter (Allt på samma sida)")
+tf.write("Felsäker version – RSI + Volym + MACD")
 
-# Lista med de 100 mest volatila/populära aktierna
+# Komprimerad lista för att garantera snabb och stabil laddning
 AKTIER = [
-    # --- SVERIGE (OMX) ---
-    "VOLV-B.ST", "AZN.ST", "EVO.ST", "INVE-B.ST", "SEB-A.ST", "SHB-A.ST", "SWED-A.ST", "NDA-SE.ST", "ERIC-B.ST", "TELIA.ST",
-    "SAND.ST", "ATCO-A.ST", "SKF-B.ST", "ALIV-SDB.ST", "BOL.ST", "HEXA-B.ST", "ASSA-B.ST", "NIBE-B.ST", "SBB-B.ST", "SINCH.ST",
-    "SAAB-B.ST", "GETI-B.ST", "ELUX-B.ST", "KINV-B.ST", "HM-B.ST", "FABG.ST", "BALD-B.ST", "WIHL.ST", "CAST.ST", "JM.ST",
-    "KLED.ST", "TIGO-SDB.ST", "LOOM.ST", "MYCR.ST", "AAK.ST", "BIOT.ST", "LUND-B.ST", "NCC-B.ST", "BILI.ST", "BETCO.ST",
-    "ANOT.ST", "SCA-B.ST", "STE-R.ST", "STOR-B.ST", "SKAF-B.ST", "PEAB-B.ST", "JM.ST", "WALL-B.ST", "SSAB-B.ST", "BOL.ST",
-    # --- USA (S&P 500 / NASDAQ) ---
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "LLY", "V",
-    "UNH", "JPM", "MA", "AVGO", "HD", "XOM", "PG", "COST", "AMD", "NFLX",
-    "ADBE", "CRM", "INTC", "CSCO", "TXN", "AMAT", "QCOM", "MU", "PANW", "SNOW",
-    "PLTR", "COIN", "MARA", "RIOT", "SOFI", "NIO", "XPEV", "LI", "BABA", "PDD",
-    "PYPL", "SQ", "DIS", "BA", "CAT", "GE", "F", "GM", "UBER", "ABNB"
+    "VOLV-B.ST", "AZN.ST", "EVO.ST", "INVE-B.ST", "SEB-A.ST", "SHB-A.ST", "SWED-A.ST", "ERIC-B.ST", "TELIA.ST",
+    "SAND.ST", "ATCO-A.ST", "SKF-B.ST", "BOL.ST", "HEXA-B.ST", "ASSA-B.ST", "NIBE-B.ST", "SBB-B.ST", "SINCH.ST",
+    "SAAB-B.ST", "GETI-B.ST", "HM-B.ST", "BALD-B.ST", "CAST.ST", "SSAB-B.ST",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "LLY", "V",
+    "UNH", "JPM", "MA", "AVGO", "HD", "XOM", "COST", "AMD", "NFLX",
+    "ADBE", "CRM", "INTC", "CSCO", "PANW", "PLTR", "COIN", "UBER"
 ]
 
-# Initiera minne för att behålla resultaten på skärmen
-if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = None
-if "ultra_sälj" not in tf.session_state: tf.session_state.ultra_sälj = None
-if "alla_aktier" not in tf.session_state: tf.session_state.alla_aktier = None
+# Initiera minne i sessionen
+if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = []
+if "ultra_sälj" not in tf.session_state: tf.session_state.ultra_sälj = []
+if "alla_aktier" not in tf.session_state: tf.session_state.alla_aktier = []
+if "har_skannat" not in tf.session_state: tf.session_state.har_skannat = False
 
 # 1. STARTKNAPP HÖGST UPP
-if tf.button("STARTA ANALYS ⚡ (Skanna 100 aktier)", use_container_width=True):
+if tf.button("STARTA ANALYS ⚡", use_container_width=True):
     status_text = tf.empty()
     progress_bar = tf.progress(0)
     
@@ -40,95 +35,107 @@ if tf.button("STARTA ANALYS ⚡ (Skanna 100 aktier)", use_container_width=True):
     temp_alla = []
     
     for i, ticker in enumerate(AKTIER):
-        status_text.write(f"Analyserar {ticker}...")
+        status_text.write(f"Hämtar: {ticker}...")
         progress_bar.progress((i + 1) / len(AKTIER))
         
         try:
-            data = yf.download(ticker, period="60d", interval="1d", progress=False)
-            if len(data) < 30: continue
+            # Hämta historik dygnsdata
+            df = yf.download(ticker, period="60d", interval="1d", progress=False)
             
-            # Beräkningar
-            data['RSI'] = ta.momentum.rsi(data['Close'], window=14)
-            data['Volym_Snitt'] = data['Volume'].rolling(window=10).mean()
-            macd_obj = ta.trend.MACD(data['Close'])
-            data['MACD'] = macd_obj.macd()
-            data['MACD_Signal'] = macd_obj.macd_signal()
+            # Kontrollera att vi faktiskt fick data och att den inte är tom
+            if df.empty or len(df) < 20:
+                continue
+                
+            # Säkerställ att vi har rätt kolumner och städa bort eventuella MultiIndex-problem
+            df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
             
-            # Senaste värden
-            pris = float(data['Close'].iloc[-1])
-            rsi = float(data['RSI'].iloc[-1])
-            vol = float(data['Volume'].iloc[-1])
-            v_snitt = float(data['Volym_Snitt'].iloc[-1])
-            m = float(data['MACD'].iloc[-1])
-            s = float(data['MACD_Signal'].iloc[-1])
+            # Beräkna indikatorer (Felsäkrat)
+            close_series = pd.Series(df['Close'].dropna().values.flatten())
+            volume_series = pd.Series(df['Volume'].dropna().values.flatten())
             
-            # Kolla MACD-korsning
-            m_igår = float(data['MACD'].iloc[-2])
-            s_igår = float(data['MACD_Signal'].iloc[-2])
+            if len(close_series) < 15:
+                continue
+                
+            df_rsi = ta.momentum.rsi(close_series, window=14)
+            df_vol_snitt = volume_series.rolling(window=10).mean()
+            macd_obj = ta.trend.MACD(close_series)
+            df_macd = macd_obj.macd()
+            df_macd_sig = macd_obj.macd_signal()
+            
+            # Plocka ut de senaste värdena
+            pris = float(close_series.iloc[-1])
+            rsi = float(df_rsi.iloc[-1])
+            vol = float(volume_series.iloc[-1])
+            v_snitt = float(df_vol_snitt.iloc[-1])
+            m = float(df_macd.iloc[-1])
+            s = float(df_macd_sig.iloc[-1])
+            
+            m_igår = float(df_macd.iloc[-2])
+            s_igår = float(df_macd_sig.iloc[-2])
+            
             macd_korsat_upp = m > s and m_igår <= s_igår
             macd_korsat_ner = m < s and m_igår >= s_igår
 
-            # Spara till stora listan
+            # Spara till stora listan (om allt gick bra)
             temp_alla.append({
                 "Aktie": ticker,
                 "Pris": round(pris, 2),
                 "RSI": round(rsi, 1)
             })
 
-            # Kolla Ultra-kriterier
+            # Kolla strategier
             if rsi <= 35 and vol > v_snitt and macd_korsat_upp:
                 temp_köp.append({
                     "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Volym": f"+{((vol/v_snitt)-1)*100:.0f}%"
                 })
             elif rsi >= 70 or macd_korsat_ner:
-                anledning = "Överköpt" if rsi >= 70 else "Trendbrott (MACD)"
+                anledning = "Överköpt" if rsi >= 70 else "MACD Sälj"
                 temp_sälj.append({
-                    "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": anledning
+                    "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Info": anledning
                 })
-        except:
+        except Exception as e:
+            # Om en enskild aktie kraschar, ignorera den och fortsätt
             continue
 
-    # Spara allt till sessionsminnet
+    # Spara till sessionen
     tf.session_state.ultra_köp = temp_köp
     tf.session_state.ultra_sälj = temp_sälj
     tf.session_state.alla_aktier = temp_alla
+    tf.session_state.har_skannat = True
 
     progress_bar.empty()
     status_text.empty()
 
-# --- HÄR RITAS ALLT UT PÅ SAMMA SIDA ---
+# --- UTMATNING (PRESENTATION AV DATA) ---
 
-if tf.session_state.alla_aktier is not None:
+if tf.session_state.har_skannat:
     
-    # 2. SEKTION: BÄSTA ULTRA-KÖP
-    tf.write("---")
-    tf.success("🌟 FÖRESLAGNA ULTRA-KÖP (RSI + Volym + MACD)")
+    # KÖP-SEKTION
+    tf.success("🌟 FÖRESLAGNA ULTRA-KÖP")
     if tf.session_state.ultra_köp:
         tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
     else:
-        tf.info("Inga aktier uppfyller alla köpkriterier just nu.")
+        tf.info("Inga aktier uppfyller alla tre köpkriterier just nu.")
         
-    # 3. SEKTION: BÄSTA ULTRA-SÄLJ
-    tf.write("---")
+    # SÄLJ-SEKTION
     tf.error("🚨 FÖRESLAGNA SÄLJ/TA VINST")
     if tf.session_state.ultra_sälj:
         tf.dataframe(pd.DataFrame(tf.session_state.ultra_sälj), use_container_width=True)
     else:
-        tf.info("Inga starka säljsignaler just nu.")
+        tf.info("Inga säljsignaler just nu.")
         
-    # 4. SEKTION: ALLA 100 AKTIER SORTERADE
-    tf.write("---")
-    tf.subheader("📊 Marknadsöversikt (Alla 100 aktier)")
-    tf.write("Sorterade efter lägst RSI (billigast) först.")
+    # STORA LISTAN (Här tvingar vi fram rådata för att se att det laddar)
+    tf.subheader("📊 Marknadsöversikt (Sorterad på lägst RSI)")
     if tf.session_state.alla_aktier:
-        df_alla = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
-        tf.dataframe(df_alla, use_container_width=True, height=500)
+        df_visa = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
+        tf.dataframe(df_visa, use_container_width=True)
+    else:
+        tf.warning("Listan kunde inte skapas. Kontrollera internetuppkopplingen mot Yahoo Finance.")
 
 else:
-    tf.write("---")
-    tf.info("Klicka på 'STARTA ANALYS' högst upp för att skanna marknaden.")
+    tf.info("Klicka på knappen ovan för att starta skanningen.")
 
-# 5. SEKTION: TRADE-KALKYLATOR (ALLTID SYNLIG LÄNGST NER)
+# KALKYLATOR LÄNGST NER
 tf.write("---")
 tf.subheader("💼 Trade-Kalkylator")
 kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
