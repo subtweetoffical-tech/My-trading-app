@@ -13,28 +13,48 @@ with tf.expander("ℹ️ SÅ HÄR FUNGERAR APPEN (Klicka för att öppna)"):
     tf.markdown("""
     ### Skillnaden på Köpsignalerna:
     
-    * **🌟 ULTRA-KÖP:** Den säkraste signalen. Kräver att RSI är lågt (<35), Volymen är hög (RVOL >= 1.5) OCH että MACD precis har vänt uppåt.
+    * **🌟 ULTRA-KÖP:** Den säkraste signalen. Kräver att RSI är lågt (<35), Volymen är hög (RVOL >= 1.5) OCH att MACD precis har vänt uppåt.
     * **👍 REKOMMENDERADE KÖP:** En klassisk "köp dippen"-signal. Aktier som har fallit extremt hårt på kort tid där RSI har pressats under 30. Perfekt för att fånga snabba studsar.
     """)
 
-# UTÖKAD LISTA: 120 handplockade daytrading-aktier (Sverige + USA)
-AKTIER = [
-    # --- SVERIGE (OMX - 60 st högvolatila & likvida) ---
-    "VOLV-B.ST", "AZN.ST", "EVO.ST", "INVE-B.ST", "SEB-A.ST", "SHB-A.ST", "SWED-A.ST", "ERIC-B.ST", "TELIA.ST",
-    "SAND.ST", "ATCO-A.ST", "SKF-B.ST", "BOL.ST", "HEXA-B.ST", "ASSA-B.ST", "NIBE-B.ST", "SBB-B.ST", "SINCH.ST",
-    "SAAB-B.ST", "GETI-B.ST", "HM-B.ST", "KINV-B.ST", "ELUX-B.ST", "BALD-B.ST", "CAST.ST", "SSAB-B.ST", "SCA-B.ST",
-    "ALIV-SDB.ST", "JM.ST", "NCC-B.ST", "PEAB-B.ST", "BILI.ST", "FABG.ST", "WIHL.ST", "WALL-B.ST", "MYCR.ST",
-    "AAK.ST", "BIOT.ST", "LUND-B.ST", "BETCO.ST", "ANOT.ST", "STE-R.ST", "STOR-B.ST", "SKAF-B.ST", "LOOM.ST",
-    "TIGO-SDB.ST", "KLED.ST", "SRECO.ST", "HPOL-B.ST", "LIFCO-B.ST", "INDT.ST", "ADDTECH-B.ST", "LAGR-B.ST", 
-    "AXFO.ST", "ICA.ST", "ALFA.ST", "DOM.ST", "FING-B.ST", "VITR.ST", "SCA-A.ST",
-    # --- USA (NASDAQ / S&P 500 - 60 st teknik, AI, krypto & momentum) ---
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "LLY", "V",
-    "UNH", "JPM", "MA", "AVGO", "HD", "XOM", "PG", "COST", "AMD", "NFLX",
-    "ADBE", "CRM", "INTC", "CSCO", "TXN", "AMAT", "QCOM", "MU", "PANW", "SNOW",
-    "PLTR", "COIN", "MARA", "RIOT", "SOFI", "NIO", "XPEV", "LI", "BABA", "PDD",
-    "PYPL", "SQ", "DIS", "BA", "CAT", "GE", "F", "GM", "UBER", "ABNB",
-    "SMCI", "MSTR", "HOOD", "AFRM", "UPST", "RIVN", "LCID", "DKNG", "PINS", "ROKU"
-]
+# Ordbok för att mappa förkortningar till fullständiga Avanza-vänliga namn
+NAMN_MAPPNING = {
+    # --- SVERIGE ---
+    "VOLV-B.ST": "Volvo, AB ser. B", "AZN.ST": "AstraZeneca", "EVO.ST": "Evolution", "INVE-B.ST": "Investor B", 
+    "SEB-A.ST": "SEB A", "SHB-A.ST": "Handelsbanken A", "SWED-A.ST": "Swedbank A", "ERIC-B.ST": "Ericsson B", 
+    "TELIA.ST": "Telia Company", "SAND.ST": "Sandvik", "ATCO-A.ST": "Atlas Copco A", "SKF-B.ST": "SKF B", 
+    "BOL.ST": "Boliden", "HEXA-B.ST": "Hexagon B", "ASSA-B.ST": "Assa Abloy B", "NIBE-B.ST": "Nibe Industrier B", 
+    "SBB-B.ST": "Samhällsbyggnadsbolaget B", "SINCH.ST": "Sinch", "SAAB-B.ST": "Saab B", "GETI-B.ST": "Getinge B", 
+    "HM-B.ST": "Hennes & Mauritz B", "KINV-B.ST": "Kinnevik B", "ELUX-B.ST": "Electrolux B", "BALD-B.ST": "Balder B", 
+    "CAST.ST": "Castellum", "SSAB-B.ST": "SSAB B", "SCA-B.ST": "SCA B", "ALIV-SDB.ST": "Autoliv SDB", 
+    "JM.ST": "JM", "NCC-B.ST": "NCC B", "PEAB-B.ST": "Peab B", "BILI.ST": "Bilia A", 
+    "FABG.ST": "Fabege", "WIHL.ST": "Wihlborgs Fastigheter", "WALL-B.ST": "Wallenstam B", "MYCR.ST": "Mycronic",
+    "AAK.ST": "AAK", "BIOT.ST": "Biotage", "LUND-B.ST": "Lundbergföretagen B", "BETCO.ST": "Betsson B", 
+    "ANOT.ST": "Anoto Group", "STE-R.ST": "Stora Enso R", "STOR-B.ST": "Stora Enso B", "SKAF-B.ST": "SkiStar B", 
+    "LOOM.ST": "Loomis", "TIGO-SDB.ST": "Millicom Int. Cellular SDB", "KLED.ST": "Kallebäck Property Invest", 
+    "SRECO.ST": "Swedish Orphan Biovitrum", "HPOL-B.ST": "Hexatronic Group", "LIFCO-B.ST": "Lifco B", 
+    "INDT.ST": "Indutrade", "ADDTECH-B.ST": "Addtech B", "LAGR-B.ST": "Lagercrantz Group B", "AXFO.ST": "Axfood", 
+    "ICA.ST": "ICA Gruppen (Obs! Avnoterad)", "ALFA.ST": "Alfa Laval", "DOM.ST": "Dometic Group", 
+    "FING-B.ST": "Fingerprint Cards B", "VITR.ST": "Vitrolife", "SCA-A.ST": "SCA A",
+    # --- USA ---
+    "AAPL": "Apple Inc.", "MSFT": "Microsoft Corp.", "GOOGL": "Alphabet Inc. Class A", "AMZN": "Amazon.com Inc.", 
+    "NVDA": "NVIDIA Corp.", "META": "Meta Platforms Inc.", "TSLA": "Tesla Inc.", "BRK-B": "Berkshire Hathaway B", 
+    "LLY": "Eli Lilly & Co.", "V": "Visa Inc.", "UNH": "UnitedHealth Group", "JPM": "JPMorgan Chase & Co.", 
+    "MA": "Mastercard Inc.", "AVGO": "Broadcom Inc.", "HD": "Home Depot Inc.", "XOM": "Exxon Mobil Corp.", 
+    "PG": "Procter & Gamble Co.", "COST": "Costco Wholesale", "AMD": "Advanced Micro Devices", "NFLX": "Netflix Inc.",
+    "ADBE": "Adobe Inc.", "CRM": "Salesforce Inc.", "INTC": "Intel Corp.", "CSCO": "Cisco Systems", 
+    "TXN": "Texas Instruments", "AMAT": "Applied Materials", "QCOM": "Qualcomm Inc.", "MU": "Micron Technology", 
+    "PANW": "Palo Alto Networks", "SNOW": "Snowflake Inc.", "PLTR": "Palantir Technologies", "COIN": "Coinbase Global", 
+    "MARA": "MARA Holdings", "RIOT": "Riot Platforms", "SOFI": "SoFi Technologies", "BABA": "Alibaba Group", 
+    "PDD": "PDD Holdings (Pinduoduo)", "NIO": "Nio Inc. ADR", "XPEV": "Xpeng Inc. ADR", "LI": "Li Auto Inc. ADR", 
+    "PYPL": "PayPal Holdings", "SQ": "Block Inc. (Square)", "DIS": "Walt Disney Co.", "BA": "Boeing Co.", 
+    "CAT": "Caterpillar Inc.", "GE": "General Electric", "F": "Ford Motor Co.", "GM": "General Motors", 
+    "ABNB": "Airbnb Inc.", "SMCI": "Super Micro Computer", "MSTR": "MicroStrategy Inc.", "HOOD": "Robinhood Markets", 
+    "AFRM": "Affirm Holdings", "UPST": "Upstart Holdings", "RIVN": "Rivian Automotive", "LCID": "Lucid Group", 
+    "DKNG": "DraftKings Inc.", "PINS": "Pinterest Inc.", "ROKU": "Roku Inc."
+}
+
+AKTIER = list(NAMN_MAPPNING.keys())
 
 # Initiera minne i sessionen
 if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = []
@@ -54,11 +74,10 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
     temp_alla = []
     
     for i, ticker in enumerate(AKTIER):
-        status_text.write(f"Skannar ({i+1}/120): {ticker}...")
+        status_text.write(f"Skannar ({i+1}/120): {NAMN_MAPPNING[ticker]}...")
         progress_bar.progress((i + 1) / len(AKTIER))
         
         try:
-            # Hämtar 15m-data (Begränsat till 20 dagar för max hastighet med 120 aktier)
             df = yf.download(ticker, period="20d", interval="15m", progress=False)
             
             if df.empty or len(df) < 30:
@@ -93,6 +112,9 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             rvol = vol / v_snitt if v_snitt > 0 else 1.0
             dags_utveckling = ((pris - öppning) / öppning) * 100
             
+            # Hämta det fullständiga namnet
+            fullt_namn = NAMN_MAPPNING.get(ticker, ticker)
+            
             # MACD korsningar
             m_igår = float(df_macd.iloc[-2])
             s_igår = float(df_macd_sig.iloc[-2])
@@ -105,9 +127,10 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             elif m < s:
                 macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-            # Spara till stora listan
+            # Spara till stora listan med fullständigt namn
             temp_alla.append({
-                "Aktie": ticker,
+                "Aktie (Sök på Avanza)": fullt_namn,
+                "Symbol": ticker,
                 "Pris": round(pris, 2),
                 "Idag %": f"{dags_utveckling:+.2f}%",
                 "RSI (15m)": round(rsi, 1),
@@ -118,18 +141,18 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             # Sortering till de olika köptabellerna
             if rsi <= 35 and rvol >= 1.5 and macd_korsat_upp:
                 temp_ultra_köp.append({
-                    "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
+                    "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
                 })
             elif rsi <= 30:
                 temp_rek_köp.append({
-                    "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
+                    "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
                 })
                 
             # Säljsignaler
             if rsi >= 70 or macd_korsat_ner:
                 anledning = "Överköpt ⚠️" if rsi >= 70 else "Trendbrott 🚨"
                 temp_sälj.append({
-                    "Aktie": ticker, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": anledning, "Idag %": f"{dags_utveckling:+.2f}%"
+                    "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": anledning, "Idag %": f"{dags_utveckling:+.2f}%"
                 })
         except:
             continue
