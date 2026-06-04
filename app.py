@@ -6,18 +6,18 @@ import ta
 # Sätt sidkonfiguration för mobilvänlighet
 tf.set_page_config(page_title="Ultra Trading Bot", layout="centered")
 
-tf.title("🚀 Ultra Trading Scanner")
+tf.title("🚀 Ultra Trading Scanner Pro")
 
 # --- INFORMATIONSFLIK (UTFÄLLBAR) ---
-with tf.expander("ℹ️ SÅ HÄR FUNGERAR APPEN (Klicka för att öppna)"):
+with tf.expander("ℹ️ SÅ HÄR FUNGERAR DE OPTIMERADE SIGNALERNA"):
     tf.markdown("""
-    ### Skillnaden på Köpsignalerna:
+    ### Förbättrad logik för högre lönsamhet:
     
-    * **🌟 ULTRA-KÖP:** Den säkraste signalen. Kräver att RSI är lågt (<35), Volymen är hög (RVOL >= 1.5) OCH att MACD precis har vänt uppåt.
-    * **👍 REKOMMENDERADE KÖP:** En klassisk "köp dippen"-signal. Aktier som har fallit extremt hårt på kort tid där RSI har pressats under 30. Perfekt för att fånga snabba studsar.
+    * **🌟 ULTRA-KÖP:** Säkraste signalen. Kräver översåld nivå (<35), hög volym (RVOL >= 1.5) OCH ett bekräftat prisskifte (MACD korsar upp precis nu).
+    * **👍 REKOMMENDERADE KÖP (Stabiliserad dipp):** Kräver RSI < 30, men nu även att säljet har avtagit (priset stänger högre än föregående 15-minutersbars stängning). Detta förhindrar att du köper en fallande kniv.
+    * **🚨 FÖRESLAGNA SÄLJ:** Signalerar nu endast när trenden faktiskt bryts (MACD korsar ner på översålda nivåer), vilket låter vinnare löpa längre.
     """)
 
-# Ordbok för att mappa förkortningar till fullständiga Avanza-vänliga namn
 NAMN_MAPPNING = {
     # --- SVERIGE ---
     "VOLV-B.ST": "Volvo, AB ser. B", "AZN.ST": "AstraZeneca", "EVO.ST": "Evolution", "INVE-B.ST": "Investor B", 
@@ -34,8 +34,7 @@ NAMN_MAPPNING = {
     "LOOM.ST": "Loomis", "TIGO-SDB.ST": "Millicom Int. Cellular SDB", "KLED.ST": "Kallebäck Property Invest", 
     "SRECO.ST": "Swedish Orphan Biovitrum", "HPOL-B.ST": "Hexatronic Group", "LIFCO-B.ST": "Lifco B", 
     "INDT.ST": "Indutrade", "ADDTECH-B.ST": "Addtech B", "LAGR-B.ST": "Lagercrantz Group B", "AXFO.ST": "Axfood", 
-    "ICA.ST": "ICA Gruppen (Obs! Avnoterad)", "ALFA.ST": "Alfa Laval", "DOM.ST": "Dometic Group", 
-    "FING-B.ST": "Fingerprint Cards B", "VITR.ST": "Vitrolife", "SCA-A.ST": "SCA A",
+    "ALFA.ST": "Alfa Laval", "DOM.ST": "Dometic Group", "FING-B.ST": "Fingerprint Cards B", "VITR.ST": "Vitrolife", "SCA-A.ST": "SCA A",
     # --- USA ---
     "AAPL": "Apple Inc.", "MSFT": "Microsoft Corp.", "GOOGL": "Alphabet Inc. Class A", "AMZN": "Amazon.com Inc.", 
     "NVDA": "NVIDIA Corp.", "META": "Meta Platforms Inc.", "TSLA": "Tesla Inc.", "BRK-B": "Berkshire Hathaway B", 
@@ -56,14 +55,12 @@ NAMN_MAPPNING = {
 
 AKTIER = list(NAMN_MAPPNING.keys())
 
-# Initiera minne i sessionen
 if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = []
 if "rek_köp" not in tf.session_state: tf.session_state.rek_köp = []
 if "ultra_sälj" not in tf.session_state: tf.session_state.ultra_sälj = []
 if "alla_aktier" not in tf.session_state: tf.session_state.alla_aktier = []
 if "har_skannat" not in tf.session_state: tf.session_state.har_skannat = False
 
-# 1. STARTKNAPP HÖGST UPP
 if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=True):
     status_text = tf.empty()
     progress_bar = tf.progress(0)
@@ -79,9 +76,7 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
         
         try:
             df = yf.download(ticker, period="20d", interval="15m", progress=False)
-            
-            if df.empty or len(df) < 30:
-                continue
+            if df.empty or len(df) < 30: continue
                 
             df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
             
@@ -89,18 +84,16 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             volume_series = pd.Series(df['Volume'].dropna().values.flatten())
             open_series = pd.Series(df['Open'].dropna().values.flatten())
             
-            if len(close_series) < 15:
-                continue
+            if len(close_series) < 15: continue
                 
-            # Beräkningar
             df_rsi = ta.momentum.rsi(close_series, window=14)
             df_vol_snitt = volume_series.rolling(window=10).mean()
             macd_obj = ta.trend.MACD(close_series)
             df_macd = macd_obj.macd()
             df_macd_sig = macd_obj.macd_signal()
             
-            # Senaste värden
             pris = float(close_series.iloc[-1])
+            pris_förra_bar = float(close_series.iloc[-2]) # Nytt: Kolla förra 15m-stängningen
             öppning = float(open_series.iloc[-1])
             rsi = float(df_rsi.iloc[-1])
             vol = float(volume_series.iloc[-1])
@@ -108,14 +101,11 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             m = float(df_macd.iloc[-1])
             s = float(df_macd_sig.iloc[-1])
             
-            # RVOL & Dagsrörelse
             rvol = vol / v_snitt if v_snitt > 0 else 1.0
             dags_utveckling = ((pris - öppning) / öppning) * 100
             
-            # Hämta det fullständiga namnet
             fullt_namn = NAMN_MAPPNING.get(ticker, ticker)
             
-            # MACD korsningar
             m_igår = float(df_macd.iloc[-2])
             s_igår = float(df_macd_sig.iloc[-2])
             macd_korsat_upp = m > s and m_igår <= s_igår
@@ -127,30 +117,27 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
             elif m < s:
                 macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-            # Spara till stora listan med fullständigt namn
             temp_alla.append({
-                "Aktie (Sök på Avanza)": fullt_namn,
-                "Symbol": ticker,
-                "Pris": round(pris, 2),
-                "Idag %": f"{dags_utveckling:+.2f}%",
-                "RSI (15m)": round(rsi, 1),
-                "RVOL": f"{rvol:.2f}x",
-                "Trend (MACD)": macd_status
+                "Aktie (Sök på Avanza)": fullt_namn, "Symbol": ticker, "Pris": round(pris, 2),
+                "Idag %": f"{dags_utveckling:+.2f}%", "RSI (15m)": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "Trend (MACD)": macd_status
             })
 
-            # Sortering till de olika köptabellerna
+            # --- OPTIMERAD KÖPLOGIK ---
             if rsi <= 35 and rvol >= 1.5 and macd_korsat_upp:
                 temp_ultra_köp.append({
                     "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
                 })
-            elif rsi <= 30:
+            # NYTT FILTER: Priset måste stänga HÖGRE än förra baren (Trendvändning påbörjad, ingen fallande kniv)
+            elif rsi <= 30 and pris > pris_förra_bar:
                 temp_rek_köp.append({
                     "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Idag %": f"{dags_utveckling:+.2f}%"
                 })
                 
-            # Säljsignaler
-            if rsi >= 70 or macd_korsat_ner:
-                anledning = "Överköpt ⚠️" if rsi >= 70 else "Trendbrott 🚨"
+            # --- OPTIMERAD SÄLJLOGIK ---
+            # Kräver att det faktiskt är ett trendbrott (MACD korsar ner) när den är överköpt, 
+            # eller att RSI blir extremt överhettad (>75)
+            if (rsi >= 70 and macd_korsat_ner) or rsi >= 75:
+                anledning = "Extremt Överköpt ⚠️" if rsi >= 75 else "Vändning Nedåt 🚨"
                 temp_sälj.append({
                     "Aktie (Sök på Avanza)": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": anledning, "Idag %": f"{dags_utveckling:+.2f}%"
                 })
@@ -167,25 +154,20 @@ if tf.button("STARTA ULTRA-ANALYS ⚡ (Skanna 120 aktier)", use_container_width=
     status_text.empty()
 
 # --- PRESENTATION PÅ SKÄRMEN ---
-
 if tf.session_state.har_skannat:
-    
-    # 1. ULTRA-KÖP
     tf.success("🌟 FÖRESLAGNA ULTRA-KÖP (RSI + RVOL + MACD)")
     if tf.session_state.ultra_köp:
         tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
     else:
         tf.info("Inga aktier uppfyller alla tre kriterier just nu.")
         
-    # 2. VANLIGA REKOMMENDERADE KÖP
     tf.write("---")
-    tf.info("👍 REKOMMENDERADE KÖP (Kraftigt översålda, RSI < 30)")
+    tf.info("👍 REKOMMENDERADE KÖP (Stabiliserade Dippar, RSI < 30)")
     if tf.session_state.rek_köp:
         tf.dataframe(pd.DataFrame(tf.session_state.rek_köp), use_container_width=True)
     else:
-        tf.info("Inga översålda aktier just nu.")
+        tf.info("Inga översålda aktier som stabiliserats just nu.")
         
-    # 3. SÄLJ
     tf.write("---")
     tf.error("🚨 FÖRESLAGNA SÄLJ/TA VINST")
     if tf.session_state.ultra_sälj:
@@ -193,20 +175,28 @@ if tf.session_state.har_skannat:
     else:
         tf.info("Inga säljsignaler just nu.")
         
-    # 4. MARKNADSÖVERSIKT
     tf.write("---")
     tf.subheader("📊 Komplett Marknadsöversikt (120 aktier)")
     if tf.session_state.alla_aktier:
         df_visa = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI (15m)", ascending=True)
         tf.dataframe(df_visa, use_container_width=True, height=500)
-
 else:
     tf.info("Klicka på knappen ovan för att starta skanningen.")
 
-# 5. TRADE-KALKYLATOR
+# --- DYNAMISK TRADE-KALKYLATOR ---
 tf.write("---")
-tf.subheader("💼 Trade-Kalkylator")
+tf.subheader("💼 Flexibel Trade-Kalkylator")
 kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
+
+# Låter användaren välja egen vinst och stop loss baserat på marknadens humör
+col1, col2 = tf.columns(2)
+with col1:
+    vinst_procent = tf.slider("Målvinst (%)", 1.0, 15.0, 5.0, step=0.5)
+with col2:
+    loss_procent = tf.slider("Stop Loss (%)", 1.0, 10.0, 3.0, step=0.5)
+
 if kp > 0:
-    tf.success(f"🎯 Målkurs (+5%): **{kp * 1.05:.2f}**")
-    tf.error(f"🛑 Stop Loss (-3%): **{kp * 0.97:.2f}**")
+    target = kp * (1 + (vinst_procent / 100))
+    stop = kp * (1 - (loss_procent / 100))
+    tf.success(f"🎯 Målkurs (+{vinst_procent}%): **{target:.2f}**")
+    tf.error(f"🛑 Stop Loss (-{loss_procent}%): **{stop:.2f}**")
