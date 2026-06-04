@@ -25,9 +25,6 @@ AKTIER = [
     "PYPL", "SQ", "DIS", "BA", "CAT", "GE", "F", "GM", "UBER", "ABNB"
 ]
 
-# Skapa flikar först så att Streamlit vet var allt ska ligga
-tab1, tab2, tab3 = tf.tabs(["🌟 Ultra-Skanner", "📊 Allas RSI", "💼 Trade-Kalkylator"])
-
 # Variabler för att spara data i appens minne under körning
 if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = None
 if "ultra_sälj" not in tf.session_state: tf.session_state.ultra_sälj = None
@@ -91,21 +88,26 @@ if tf.button("STARTA ANALYS ⚡ (Hämtar data för 100 aktier)", use_container_w
         except:
             continue
 
-    # Spara resultaten till session_state så de inte försvinner när man klickar runt
+    # Spara resultaten till session_state
     tf.session_state.ultra_köp = temp_köp
     tf.session_state.ultra_sälj = temp_sälj
     tf.session_state.alla_aktier = temp_alla
 
-    status_text.success("Analys klar! Titta på flikarna nedan.")
     progress_bar.empty()
+    status_text.empty()
+    
+    # Tvinga appen att ladda om och visa all data direkt
+    tf.rerun()
 
-# --- RYMD FÖR FLIK 1: ULTRA SKANNER ---
+# Skapa flikar EFTER knappen så att datan ritas ut korrekt
+tab1, tab2, tab3 = tf.tabs(["🌟 Ultra-Skanner", "📊 Allas RSI", "💼 Trade-Kalkylator"])
+
+# --- FLIK 1: ULTRA SKANNER ---
 with tab1:
     tf.subheader("💎 Ultra-signaler (Hög träffsäkerhet)")
     tf.write("Visar aktier där RSI, Volym och MACD samverkar.")
     
     if tf.session_state.ultra_köp is not None:
-        tf.write("---")
         tf.success("🌟 FÖRESLAGNA ULTRA-KÖP")
         if tf.session_state.ultra_köp:
             tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
@@ -119,20 +121,23 @@ with tab1:
         else:
             tf.info("Inga starka säljsignaler just nu.")
     else:
-        tf.info("Klicka på 'STARTA ANALYS' högst upp för att se signaler.")
+        tf.info("Klicka på 'STARTA ANALYS' högst upp för att starta.")
 
-# --- RYMD FÖR FLIK 2: ALLAS RSI ---
+# --- FLIK 2: ALLAS RSI ---
 with tab2:
     tf.subheader("📈 Marknadsöversikt")
-    tf.write("Här visas alla 100 aktier sorterade med lägst RSI (billigast) först.")
+    tf.write("Alla 100 aktier sorterade efter lägst RSI först.")
     
-    if tf.session_state.alla_aktier:
-        df_alla = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
-        tf.dataframe(df_alla, use_container_width=True, height=500)
+    if tf.session_state.alla_aktier is not None:
+        if tf.session_state.alla_aktier:
+            df_alla = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
+            tf.dataframe(df_alla, use_container_width=True, height=600)
+        else:
+            tf.warning("Ingen data hittades efter körning.")
     else:
         tf.info("Klicka på 'STARTA ANALYS' högst upp för att ladda listan.")
 
-# --- RYMD FÖR FLIK 3: KALKYLATOR ---
+# --- FLIK 3: KALKYLATOR ---
 with tab3:
     tf.subheader("Räkna på pågående trade")
     kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
