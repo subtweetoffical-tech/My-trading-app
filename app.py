@@ -7,7 +7,7 @@ import ta
 tf.set_page_config(page_title="Ultra Trading Bot", layout="centered")
 
 tf.title("🚀 Ultra Trading Scanner")
-tf.write("RSI + Volym + MACD Filter")
+tf.write("RSI + Volym + MACD Filter (Allt på samma sida)")
 
 # Lista med de 100 mest volatila/populära aktierna
 AKTIER = [
@@ -25,13 +25,13 @@ AKTIER = [
     "PYPL", "SQ", "DIS", "BA", "CAT", "GE", "F", "GM", "UBER", "ABNB"
 ]
 
-# Variabler för att spara data i appens minne under körning
+# Initiera minne för att behålla resultaten på skärmen
 if "ultra_köp" not in tf.session_state: tf.session_state.ultra_köp = None
 if "ultra_sälj" not in tf.session_state: tf.session_state.ultra_sälj = None
 if "alla_aktier" not in tf.session_state: tf.session_state.alla_aktier = None
 
-# Startknapp högst upp
-if tf.button("STARTA ANALYS ⚡ (Hämtar data för 100 aktier)", use_container_width=True):
+# 1. STARTKNAPP HÖGST UPP
+if tf.button("STARTA ANALYS ⚡ (Skanna 100 aktier)", use_container_width=True):
     status_text = tf.empty()
     progress_bar = tf.progress(0)
     
@@ -88,59 +88,50 @@ if tf.button("STARTA ANALYS ⚡ (Hämtar data för 100 aktier)", use_container_w
         except:
             continue
 
-    # Spara resultaten till session_state
+    # Spara allt till sessionsminnet
     tf.session_state.ultra_köp = temp_köp
     tf.session_state.ultra_sälj = temp_sälj
     tf.session_state.alla_aktier = temp_alla
 
     progress_bar.empty()
     status_text.empty()
-    
-    # Tvinga appen att ladda om och visa all data direkt
-    tf.rerun()
 
-# Skapa flikar EFTER knappen så att datan ritas ut korrekt
-tab1, tab2, tab3 = tf.tabs(["🌟 Ultra-Skanner", "📊 Allas RSI", "💼 Trade-Kalkylator"])
+# --- HÄR RITAS ALLT UT PÅ SAMMA SIDA ---
 
-# --- FLIK 1: ULTRA SKANNER ---
-with tab1:
-    tf.subheader("💎 Ultra-signaler (Hög träffsäkerhet)")
-    tf.write("Visar aktier där RSI, Volym och MACD samverkar.")
+if tf.session_state.alla_aktier is not None:
     
-    if tf.session_state.ultra_köp is not None:
-        tf.success("🌟 FÖRESLAGNA ULTRA-KÖP")
-        if tf.session_state.ultra_köp:
-            tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
-        else:
-            tf.info("Inga aktier uppfyller alla köpkriterier just nu.")
-            
-        tf.write("---")
-        tf.error("🚨 FÖRESLAGNA SÄLJ/TA VINST")
-        if tf.session_state.ultra_sälj:
-            tf.dataframe(pd.DataFrame(tf.session_state.ultra_sälj), use_container_width=True)
-        else:
-            tf.info("Inga starka säljsignaler just nu.")
+    # 2. SEKTION: BÄSTA ULTRA-KÖP
+    tf.write("---")
+    tf.success("🌟 FÖRESLAGNA ULTRA-KÖP (RSI + Volym + MACD)")
+    if tf.session_state.ultra_köp:
+        tf.dataframe(pd.DataFrame(tf.session_state.ultra_köp), use_container_width=True)
     else:
-        tf.info("Klicka på 'STARTA ANALYS' högst upp för att starta.")
-
-# --- FLIK 2: ALLAS RSI ---
-with tab2:
-    tf.subheader("📈 Marknadsöversikt")
-    tf.write("Alla 100 aktier sorterade efter lägst RSI först.")
-    
-    if tf.session_state.alla_aktier is not None:
-        if tf.session_state.alla_aktier:
-            df_alla = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
-            tf.dataframe(df_alla, use_container_width=True, height=600)
-        else:
-            tf.warning("Ingen data hittades efter körning.")
+        tf.info("Inga aktier uppfyller alla köpkriterier just nu.")
+        
+    # 3. SEKTION: BÄSTA ULTRA-SÄLJ
+    tf.write("---")
+    tf.error("🚨 FÖRESLAGNA SÄLJ/TA VINST")
+    if tf.session_state.ultra_sälj:
+        tf.dataframe(pd.DataFrame(tf.session_state.ultra_sälj), use_container_width=True)
     else:
-        tf.info("Klicka på 'STARTA ANALYS' högst upp för att ladda listan.")
+        tf.info("Inga starka säljsignaler just nu.")
+        
+    # 4. SEKTION: ALLA 100 AKTIER SORTERADE
+    tf.write("---")
+    tf.subheader("📊 Marknadsöversikt (Alla 100 aktier)")
+    tf.write("Sorterade efter lägst RSI (billigast) först.")
+    if tf.session_state.alla_aktier:
+        df_alla = pd.DataFrame(tf.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
+        tf.dataframe(df_alla, use_container_width=True, height=500)
 
-# --- FLIK 3: KALKYLATOR ---
-with tab3:
-    tf.subheader("Räkna på pågående trade")
-    kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
-    if kp > 0:
-        tf.success(f"🎯 Målkurs (+5%): **{kp * 1.05:.2f}**")
-        tf.error(f"🛑 Stop Loss (-3%): **{kp * 0.97:.2f}**")
+else:
+    tf.write("---")
+    tf.info("Klicka på 'STARTA ANALYS' högst upp för att skanna marknaden.")
+
+# 5. SEKTION: TRADE-KALKYLATOR (ALLTID SYNLIG LÄNGST NER)
+tf.write("---")
+tf.subheader("💼 Trade-Kalkylator")
+kp = tf.number_input("Ditt köppris:", min_value=0.0, step=0.1)
+if kp > 0:
+    tf.success(f"🎯 Målkurs (+5%): **{kp * 1.05:.2f}**")
+    tf.error(f"🛑 Stop Loss (-3%): **{kp * 0.97:.2f}**")
