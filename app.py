@@ -6,17 +6,18 @@ import ta
 # Sätt sidkonfiguration
 st.set_page_config(page_title="Högvolatil 200 Scanner", layout="centered")
 
-st.title("⚡ Högvolatila Scannern (Optimera Data)")
+st.title("⚡ Global Trading Scanner - Med Köprekommendation")
 
 # --- INFORMATIONSFLIK ---
-with st.expander("ℹ️ STRATEGI FÖR HÖG VOLATILITET & FLERA AFFÄRER/VECKA"):
+with st.expander("ℹ️ VARFÖR ÄR DET BRA ATT HANDLA DESSA AKTIER?"):
     st.markdown("""
-    ### Din specialanpassade strategi (Buggtestad):
-    * **1-Timmarsdata (1h):** Perfekt för svängningar som varar i några dagar.
-    * **Säker datahantering:** Fixat MultiIndex-buggen från Yahoo Finance så att inga aktier missas i skanningen.
+    ### Tre anledningar till varför det här urvalet passar din portfölj:
+    1. **Anpassat för 1 000 kr:** Alla aktier kostar under 250 kr, vilket gör att du faktiskt kan köpa ett antal aktier och bygga en portfölj, istället för att hela kassan låses i en enda dyr aktie.
+    2. **0 kr i courtage:** Genom att hålla oss till svenska aktier i SEK slipper du valutaväxlingsavgifter. Har du Avanza Start handlar du helt gratis!
+    3. **Rörelse & Volatilitet:** Listan fokuserar på tech, gaming och råvaror – sektorer som svänger tillräckligt mycket under en dag för att ge snabba vinstmöjligheter.
     """)
 
-# Uppdaterad och rensad lista (Ingen SAS, ICA, etc.)
+# Urval av rörliga aktier under 250 kr
 NAMN_MAPPNING = {
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "FORTV.ST": "Fortnox (Mjukvara)",
     "EVO.ST": "Evolution (iGaming)", "BETCO.ST": "Betsson (Gaming)", "G5EN.ST": "G5 Entertainment",
@@ -47,6 +48,8 @@ if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
 MAX_AKTIEPRIS = 250.0
+KASSA = 1000.0  # Din totala kassa
+MAX_RISK_PER_TRADE = 250.0  # Max kronor att lägga på EN enskild trade (för att kunna göra 3-4 affärer)
 
 if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
     status_text = st.empty()
@@ -59,7 +62,6 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # HÄMTA UTAN GROUP_BY FÖR ATT UNDVIKA MULTIINDEX-KRASCH
         stort_df = yf.download(alla_tickers_str, period="30d", interval="1h", progress=False)
     except Exception as e:
         st.error(f"Kunde inte hämta data: {e}")
@@ -71,13 +73,12 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
-                # SÄKER EXTRAHERING AV COLUMNS FRÅN YFINANCE MultiIndex
                 if ('Close', ticker) in stort_df.columns:
                     df_ticker = pd.DataFrame({
                         'Open': stort_df['Open'][ticker],
                         'Close': stort_df['Close'][ticker],
                         'Volume': stort_df['Volume'][ticker]
-                    }).dropna() # Dropna på hela strukturen samtidigt, inte kolumn för kolumn!
+                    }).dropna()
                 else:
                     continue
                 
@@ -88,7 +89,6 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 if pris > MAX_AKTIEPRIS or pris <= 0:
                     continue
                     
-                # Beräkna indikatorer på den tvättade dataramen
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
                 macd_obj = ta.trend.MACD(df_ticker['Close'])
@@ -118,27 +118,31 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 elif m < s:
                     macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-                max_antal = int(1000 // pris)
+                # SMART BERÄKNING: Hur många ska man köpa för att satsa max 250 kr per trade?
+                rek_antal = int(MAX_RISK_PER_TRADE // pris)
+                if rek_antal == 0 and pris <= KASSA:
+                    rek_antal = 1  # Om aktien kostar t.ex. 210 kr, köp 1 st.
+                
+                max_absolut_antal = int(KASSA // pris)
 
-                if max_antal > 0:
+                if rek_antal > 0:
                     temp_alla.append({
-                        "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Max antal för 1000kr": max_antal,
+                        "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal (Hela Kassan)": max_absolut_antal,
                         "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status
                     })
 
                     if rsi <= 35 and macd_korsat_upp:
                         temp_ultra_köp.append({
-                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Max antal": max_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x"
+                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x"
                         })
                     elif rsi <= 28 and pris > pris_förra_bar:
                         temp_rek_köp.append({
-                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Max antal": max_antal, "RSI": round(rsi, 1)
+                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1)
                         })
                         
                     if (rsi >= 72 and macd_korsat_ner) or rsi >= 78:
-                        anledning = "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"
                         temp_sälj.append({
-                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": anledning
+                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"
                         })
             except:
                 continue
@@ -152,23 +156,23 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
     progress_bar.empty()
     status_text.empty()
 
-# --- PRESENTATION ---
+# --- PRESENTATION PÅ SKÄRMEN ---
 if st.session_state.har_skannat:
-    st.success("🌟 ULTRA-KÖP (Snabb RSI-dipp + MACD-vändning)")
+    st.success("🌟 ULTRA-KÖP (Bästa signalerna just nu)")
     if st.session_state.ultra_köp:
         st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
     else:
         st.info("Inga aktier har supersignaler just den här timmen.")
         
     st.write("---")
-    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda på kort sikt)")
+    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda)")
     if st.session_state.rek_köp:
         st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
     else:
         st.info("Inga kraftiga dippar just nu.")
         
     st.write("---")
-    st.error("🚨 FÖRESLAGNA SÄLJ (Snabba vinsthemtagningar)")
+    st.error("🚨 FÖRESLAGNA SÄLJ (Dags att hämta hem vinst)")
     if st.session_state.ultra_sälj:
         st.dataframe(pd.DataFrame(st.session_state.ultra_sälj), use_container_width=True)
     else:
