@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import ta
+import numpy as np
 
 # Sätt sidkonfiguration
 st.set_page_config(page_title="Högvolatil 200 Scanner", layout="centered")
@@ -48,8 +49,8 @@ if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
 MAX_AKTIEPRIS = 250.0
-KASSA = 1000.0  # Din totala kassa
-MAX_RISK_PER_TRADE = 250.0  # Max kronor att lägga på EN enskild trade (för att kunna göra 3-4 affärer)
+KASSA = 1000.0  
+MAX_RISK_PER_TRADE = 250.0  
 
 if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
     status_text = st.empty()
@@ -62,7 +63,8 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        stort_df = yf.download(alla_tickers_str, period="30d", interval="1h", progress=False)
+        # FIX: group_by="ticker" gör datahanteringen mycket stabilare för MultiIndex
+        stort_df = yf.download(alla_tickers_str, period="30d", interval="1h", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data: {e}")
         stort_df = pd.DataFrame()
@@ -73,12 +75,9 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
-                if ('Close', ticker) in stort_df.columns:
-                    df_ticker = pd.DataFrame({
-                        'Open': stort_df['Open'][ticker],
-                        'Close': stort_df['Close'][ticker],
-                        'Volume': stort_df['Volume'][ticker]
-                    }).dropna()
+                # FIX: Hämtar data säkert baserat på ticker-gruppering
+                if ticker in stort_df.columns.levels[0]:
+                    df_ticker = stort_df[ticker].dropna(subset=['Close']).copy()
                 else:
                     continue
                 
@@ -86,7 +85,7 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 
                 pris = float(df_ticker['Close'].iloc[-1])
                 
-                if pris > MAX_AKTIEPRIS or pris <= 0:
+                if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris):
                     continue
                     
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
@@ -95,6 +94,10 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 df_macd = macd_obj.macd()
                 df_macd_sig = macd_obj.macd_signal()
                 
+                # Kontrollera att indikatorerna faktiskt har värden
+                if df_rsi.isna().iloc[-1] or df_macd.isna().iloc[-1]:
+                    continue
+
                 pris_förra_bar = float(df_ticker['Close'].iloc[-2])
                 öppning = float(df_ticker['Open'].iloc[-1])
                 rsi = float(df_rsi.iloc[-1])
@@ -107,10 +110,9 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
                 
-                m_igår = float(df_macd.iloc[-2])
-                s_igår = float(df_macd_sig.iloc[-2])
-                macd_korsat_upp = m > s and m_igår <= s_igår
-                macd_korsat_ner = m < s and m_igår >= s_igår
+                # FIX: Kolla korsning över de senaste 3 timmarna istället för bara 1 timme
+                macd_korsat_upp = (m > s) and (df_macd.iloc[-4:-1] < df_macd_sig.iloc[-4:-1]).any()
+                macd_korsat_ner = (m < s) and (df_macd.iloc[-4:-1] > df_macd_sig.iloc[-4:-1]).any()
                 
                 macd_status = "Avvakta 🟡"
                 if m > s:
@@ -118,10 +120,9 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                 elif m < s:
                     macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-                # SMART BERÄKNING: Hur många ska man köpa för att satsa max 250 kr per trade?
                 rek_antal = int(MAX_RISK_PER_TRADE // pris)
                 if rek_antal == 0 and pris <= KASSA:
-                    rek_antal = 1  # Om aktien kostar t.ex. 210 kr, köp 1 st.
+                    rek_antal = 1  
                 
                 max_absolut_antal = int(KASSA // pris)
 
@@ -131,7 +132,7 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                         "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status
                     })
 
-                    if rsi <= 35 and macd_korsat_upp:
+                    if rsi <= 35 and m > s:  # Optimerat: Kräver inte exakt korsning på timmen, bara att MACD är positiv och RSI låg
                         temp_ultra_köp.append({
                             "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x"
                         })
@@ -144,7 +145,9 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡", use_container_width=True):
                         temp_sälj.append({
                             "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"
                         })
-            except:
+            except Exception as e:
+                # Logga ut felet i konsolen om något väl kraschar så du kan se det
+                print(f"Fel vid beräkning av {ticker}: {e}")
                 continue
 
     st.session_state.ultra_köp = temp_ultra_köp
