@@ -5,20 +5,20 @@ import ta
 import numpy as np
 
 # Sätt sidkonfiguration
-st.set_page_config(page_title="Högvolatil 200 Scanner", layout="centered")
+st.set_page_config(page_title="Högvolatil 200 Scanner Pro", layout="centered")
 
-st.title("⚡ Global Trading Scanner - Med Köprekommendation")
+st.title("⚡ Global Trading Scanner - Professionell Version")
 
 # --- INFORMATIONSFLIK ---
-with st.expander("ℹ️ VARFÖR ÄR DET BRA ATT HANDLA DESSA AKTIER?"):
+with st.expander("ℹ️ SMARTA TRADING-FILTRENDRINGAR (UPPDATERAD)"):
     st.markdown("""
-    ### Tre anledningar till varför det här urvalet passar din portfölj:
-    1. **Anpassat för 1 000 kr:** Alla aktier kostar under 250 kr, vilket gör att du faktiskt kan köpa ett antal aktier och bygga en portfölj, istället för att hela kassan låses i en enda dyr aktie.
-    2. **0 kr i courtage:** Genom att hålla oss till svenska aktier i SEK slipper du valutaväxlingsavgifter. Har du Avanza Start handlar du helt gratis!
-    3. **Rörelse & Volatilitet:** Listan fokuserar på tech, gaming och råvaror – sektorer som svänger tillräckligt mycket under en dag för att ge snabba vinstmöjligheter.
+    ### Hur den här versionen hjälper dig att tjäna mer:
+    1. **EMA 200 (Trendfilter):** Vi köper *aldrig* en aktie som rasar långsiktigt, även om RSI är lågt. Vi handlar bara i upptrender.
+    2. **Volymbekräftelse (RVOL):** Köpsignaler kräver ökad handelsvolym för att säkerställa att rörelsen är äkta och inte bara brus.
+    3. **ATR-Riskhantering:** Kalkylatorn i botten använder nu *Average True Range* för att sätta en perfekt Stop Loss anpassad efter just den aktiens unika svängningar.
     """)
 
-# Urval av 200 rörliga aktier under 250 kr (Nasdaq Stockholm & First North)
+# Urval av rörliga aktier under 250 kr (Nasdaq Stockholm & First North)
 NAMN_MAPPNING = {
     # --- Original-lista ---
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "FORTV.ST": "Fortnox (Mjukvara)",
@@ -76,8 +76,8 @@ NAMN_MAPPNING = {
     "RUG.ST": "RugVista", "NOLA-B.ST": "Nolato B",
 
     # --- Förnybar Energi, Cleantech & El ---
-    "CLIME.ST": "Climeon", "OX2.ST": "OX2", "MINESTO.ST": "Minesto", "NIL-B.ST": "Nilörngruppen",
-    "SALT.ST": "SaltX Technology", "AZELIO.ST": "Azelio", "SOLTEK.ST": "SolTech Energy", "METV.ST": "Metacon",
+    "CLIME.ST": "Climeon", "MINESTO.ST": "Minesto", "NIL-B.ST": "Nilörngruppen",
+    "SALT.ST": "SaltX Technology", "SOLTEK.ST": "SolTech Energy", "METV.ST": "Metacon",
     "ECCO.ST": "Eolus Vind", "ARISE.ST": "Arise", "CIBUS.ST": "Cibus Nordic Real Estate", "SVEF.ST": "Svenska Aerogel",
 
     # --- Konsument, Retail & Tjänster ---
@@ -107,7 +107,7 @@ MAX_AKTIEPRIS = 250.0
 KASSA = 1000.0  
 MAX_RISK_PER_TRADE = 250.0  
 
-if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width=True):
+if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=True):
     status_text = st.empty()
     progress_bar = st.progress(0)
     
@@ -118,14 +118,13 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # Laddar ner all data stabilt via grupperade tickers
-        stort_df = yf.download(alla_tickers_str, period="30d", interval="1h", progress=False, group_by="ticker")
+        # Laddar ner mer data (60d) för att säkert kunna beräkna EMA 200 på timbasis
+        stort_df = yf.download(alla_tickers_str, period="60d", interval="1h", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
         stort_df = pd.DataFrame()
 
     if not stort_df.empty:
-        # Säkerställ att vi kan läsa av MultiIndex-kolumnerna korrekt
         tillgangliga_tickers = stort_df.columns.levels[0] if isinstance(stort_df.columns, pd.MultiIndex) else []
 
         for i, ticker in enumerate(AKTIER):
@@ -136,28 +135,36 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                 continue
                 
             try:
-                # Bryt ut data för den enskilda aktien och rensa rader utan slutpris på ett säkert sätt
                 df_ticker = stort_df[ticker].copy()
                 df_ticker = df_ticker.dropna(subset=['Close'])
                 
-                if len(df_ticker) < 25: 
+                # Kräver tillräckligt med data för indikatorerna
+                if len(df_ticker) < 50: 
                     continue
                 
                 pris = float(df_ticker['Close'].iloc[-1])
-                
                 if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris):
                     continue
                     
-                # Beräkna tekniska indikatorer via ta-biblioteket
+                # --- TEKNISK ANALYS ---
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
+                
+                # Trendfilter: EMA 200 (Om vi har tillräckligt med data, annars EMA 50)
+                window_ema = 200 if len(df_ticker) >= 200 else 50
+                df_ema = ta.trend.ema_indicator(df_ticker['Close'], window=window_ema)
+                
+                # Volatilitetsfilter för kalkylatorn: ATR
+                df_atr = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
+                
                 macd_obj = ta.trend.MACD(df_ticker['Close'])
                 df_macd = macd_obj.macd()
                 df_macd_sig = macd_obj.macd_signal()
                 
-                if df_rsi.isna().iloc[-1] or df_macd.isna().iloc[-1]:
+                if df_rsi.isna().iloc[-1] or df_macd.isna().iloc[-1] or df_ema.isna().iloc[-1]:
                     continue
 
+                # Variabler för sista stapeln
                 pris_förra_bar = float(df_ticker['Close'].iloc[-2])
                 öppning = float(df_ticker['Open'].iloc[-1])
                 rsi = float(df_rsi.iloc[-1])
@@ -165,12 +172,17 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                 v_snitt = float(df_vol_snitt.iloc[-1])
                 m = float(df_macd.iloc[-1])
                 s = float(df_macd_sig.iloc[-1])
+                ema_filter = float(df_ema.iloc[-1])
+                atr_varde = float(df_atr.iloc[-1])
                 
                 rvol = vol / v_snitt if v_snitt > 0 else 1.0
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
                 
-                # Säkrare MACD-korsning (fångar upp signaler inom de senaste 3 timmarna)
+                # Trendstatus: Är vi i en långsiktig upptrend?
+                i_upptrend = pris > ema_filter
+                
+                # MACD-korsning
                 macd_korsat_upp = (m > s) and (df_macd.iloc[-4:-1] < df_macd_sig.iloc[-4:-1]).any()
                 macd_korsat_ner = (m < s) and (df_macd.iloc[-4:-1] > df_macd_sig.iloc[-4:-1]).any()
                 
@@ -189,24 +201,28 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                 if rek_antal > 0:
                     temp_alla.append({
                         "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
-                        "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status
+                        "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status,
+                        "Trend": "Upp 📈" if i_upptrend else "Ner 📉", "ATR": round(atr_varde, 2)
                     })
 
-                    if rsi <= 35 and m > s:  
+                    # STRATEGI 1: ULTRA-KÖP (Översåld + MACD vändning + Långsiktig upptrend + Volym)
+                    if rsi <= 38 and m > s and i_upptrend and rvol >= 1.3:  
                         temp_ultra_köp.append({
-                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x"
+                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal": rek_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)
                         })
-                    elif rsi <= 28 and pris > pris_förra_bar:
+                    
+                    # STRATEGI 2: REKOMMENDERADE DIPP-KÖP (Klassisk stark dipp i en sund upptrend)
+                    elif rsi <= 30 and pris > pris_förra_bar and i_upptrend:
                         temp_rek_köp.append({
-                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1)
+                            "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal": rek_antal, "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)
                         })
                         
+                    # STRATEGI 3: SÄLJ / VINSTHEMTAGNING (Överhettad RSI eller trendbrott nedåt)
                     if (rsi >= 72 and macd_korsat_ner) or rsi >= 78:
                         temp_sälj.append({
                             "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"
                         })
             except Exception as e:
-                # Loggar fel i terminalen istället för att krascha Streamlit-gränssnittet
                 print(f"Fel vid analys av {ticker}: {e}")
                 continue
 
@@ -221,25 +237,25 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
 
 # --- PRESENTATION PÅ SKÄRMEN ---
 if st.session_state.har_skannat:
-    st.success("🌟 ULTRA-KÖP (Bästa signalerna just nu)")
+    st.success("🌟 ULTRA-KÖP (Högst sannolikhet – Trend + Volym + RSI + MACD)")
     if st.session_state.ultra_köp:
         st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
     else:
-        st.info("Inga aktier har supersignaler just den här timmen.")
+        st.info("Inga aktier matchar de strikta Ultra-kriterierna just nu. (Bra! Det sparar dig från dåliga affärer).")
         
     st.write("---")
-    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda)")
+    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda aktier i en sund upptrend)")
     if st.session_state.rek_köp:
         st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
     else:
-        st.info("Inga kraftiga dippar just nu.")
+        st.info("Inga säkra dippar i upptrender hittades just nu.")
         
     st.write("---")
     st.error("🚨 FÖRESLAGNA SÄLJ (Dags att hämta hem vinst)")
     if st.session_state.ultra_sälj:
         st.dataframe(pd.DataFrame(st.session_state.ultra_sälj), use_container_width=True)
     else:
-        st.info("Inga aktier är överhettade just nu.")
+        st.info("Inga aktier är överhettade för tillfället.")
         
     st.write("---")
     st.subheader("📊 Komplett Översikt (Sorterat på lägst RSI)")
@@ -247,19 +263,24 @@ if st.session_state.har_skannat:
         df_visa = pd.DataFrame(st.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
         st.dataframe(df_visa, use_container_width=True, height=500)
 
-# --- DYNAMISK TRADE-KALKYLATOR ---
+# --- DYNAMISK VOLATILITETSKALKYLATOR (ATR) ---
 st.write("---")
-st.subheader("💼 Kalkylator för Snabba Affärer")
+st.subheader("💼 Smart Riskkalkylator (ATR-baserad)")
+st.markdown("_Denna kalkylator anpassar dina targets efter hur mycket aktien faktiskt brukar röra sig i genomsnitt._")
+
 kp = st.number_input("Ditt inköpspris (SEK):", min_value=0.0, step=1.0)
+valda_atr = st.number_input("Aktiens ATR-värde (se tabellen ovan):", min_value=0.0, step=0.1)
 
-col1, col2 = st.columns(2)
-with col1:
-    vinst_procent = st.slider("Målvinst per trade (%)", 1.5, 12.0, 4.0, step=0.5)
-with col2:
-    loss_procent = st.slider("Stop Loss (%)", 1.5, 6.0, 2.5, step=0.5)
-
-if kp > 0:
-    target = kp * (1 + (vinst_procent / 100))
-    stop = kp * (1 - (loss_procent / 100))
-    st.success(f"🎯 Ta vinst vid: **{target:.2f} SEK** (+{vinst_procent}%)")
-    st.error(f"🛑 Gå ur (Stop Loss) vid: **{stop:.2f} SEK** (-{loss_procent}%)")
+if kp > 0 and valda_atr > 0:
+    # Professionell riskhantering: Sätt Stop Loss på 1.5x ATR och Target på 3x ATR (Risk/Reward 1:2)
+    stop_loss_pris = kp - (1.5 * valda_atr)
+    target_pris = kp + (3.0 * valda_atr)
+    
+    vinst_procent = ((target_pris - kp) / kp) * 100
+    risk_procent = ((kp - stop_loss_pris) / kp) * 100
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.success(f"🎯 Ta vinst vid: **{target_pris:.2f} SEK** (+{vinst_procent:.1f}%)")
+    with col2:
+        st.error(f"🛑 Stop Loss vid: **{stop_loss_pris:.2f} SEK** (-{risk_procent:.1f}%)")
