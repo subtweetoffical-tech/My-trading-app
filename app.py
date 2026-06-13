@@ -18,8 +18,9 @@ with st.expander("ℹ️ VARFÖR ÄR DET BRA ATT HANDLA DESSA AKTIER?"):
     3. **Rörelse & Volatilitet:** Listan fokuserar på tech, gaming och råvaror – sektorer som svänger tillräckligt mycket under en dag för att ge snabba vinstmöjligheter.
     """)
 
-# Urval av rörliga aktier under 250 kr (Nasdaq Stockholm & First North)
+# Urval av 200 rörliga aktier under 250 kr (Nasdaq Stockholm & First North)
 NAMN_MAPPNING = {
+    # --- Original-lista ---
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "FORTV.ST": "Fortnox (Mjukvara)",
     "EVO.ST": "Evolution (iGaming)", "BETCO.ST": "Betsson (Gaming)", "G5EN.ST": "G5 Entertainment",
     "MTG-B.ST": "MTG (Gaming)", "BOOZT.ST": "Boozt (E-handel)", "BHG.ST": "BHG Group (E-handel)", 
@@ -38,32 +39,59 @@ NAMN_MAPPNING = {
     "TELIA.ST": "Telia Company", "ERIC-B.ST": "Ericsson B", "AXFO.ST": "Axfood", "RVRC.ST": "RevolutionRace", 
     "GETI-B.ST": "Getinge", "ELUX-B.ST": "Electrolux", "BONEX.ST": "BoneSupport", "MIPS.ST": "MIPS",
     "NOTE.ST": "NOTE (Elektronik)", "TOBII.ST": "Tobii (Eyetracking)", "VNV.ST": "VNV Global",
+
+    # --- Fastigheter & Bygg ---
     "DIOS.ST": "Diös Fastigheter", "HEBA-B.ST": "Heba B", "PLAT-B.ST": "Platzer", "CAT-B.ST": "Catena",
     "TRIAN-B.ST": "Trianon B", "PNDX-B.ST": "Pandox", "SLP-B.ST": "Swedish Logistic Properties", "EAST.ST": "Eastnine",
     "KFAST-B.ST": "K-Fastigheter", "LOGIST.ST": "Logistea", "INV.ST": "Invisio", "FAG.ST": "Fagerhult",
+
+    # --- Tech, IT & Telekom ---
     "KNOW.ST": "Knowit", "B3.ST": "B3 Consulting", "ITS.ST": "I.A.R Systems", "FORX.ST": "Formpipe Software",
-    "ADD-B.ST": "AddNode Group", "TIETO.ST": "Tietoevry", "HMS.ST": "HMS Networks",
+    "ADD-B.ST": "AddNode Group", "TIETO.ST": "Tietoevry", "LINK.ST": "Link Concepts", "HMS.ST": "HMS Networks",
     "PREV.ST": "Prevas B", "SOFT-B.ST": "Softronic", "EXP-B.ST": "Exsitec", "CINT.ST": "Cint Group",
     "SVR-B.ST": "Svedbergs B", "TAG.ST": "TagMaster", "SENS.ST": "Sustainable Energy",
+
+    # --- Gaming, Underhållning & E-handel ---
     "STU-B.ST": "Starbreeze B", "MAG.ST": "Mag Interactive", "ANOD.ST": "Anora Group", "LYKO.ST": "Lyko Group",
     "NELLY.ST": "Nelly Group", "CDON.ST": "CDON", "QNLI.ST": "Qliro", "SPLAY.ST": "Storytel",
     "READ.ST": "Readly International", "PION-B.ST": "PION Group", "CATE.ST": "Catena Media", "ANGI.ST": "Angler Gaming",
     "EVIL.ST": "Enea", "GIG.ST": "Gaming Innovation Group", "KRE.ST": "Kambi Group", "RAK.ST": "Raketech",
+
+    # --- Investmentbolag & Finans ---
     "INVE-B.ST": "Investor B", "KINV-B.ST": "Kinnevik B", "LATO-B.ST": "Latour B", "RATO-B.ST": "Ratos B",
     "CREA-B.ST": "Creades B", "BURE.ST": "Bure Equity", "SVOL-B.ST": "Svolder B", "TRAC-B.ST": "Traction B", 
-    "AMBEV.ST": "Ambea", "ATT.ST": "Attendo", "HUM.ST": "Humana", "XBRANE.ST": "Xbrane Biopharma", 
+    "HAV-B.ST": "Havsfrun B", "HOFI.ST": "Holdingit", "COAL.ST": "Consensus Asset Mgmt",
+
+    # --- BioTech, Medicinteknik & Hälsa ---
+    "AMBEV.ST": "Ambea", "ATT.ST": "Attendo", "HUM.ST": "Humana", "CALTX.ST": "Calliditas Therapeutics",
+    "XBRANE.ST": "Xbrane Biopharma", "ELLV.ST": "Elos Medtech", "MEDA-A.ST": "Medivir A", "MVIC.ST": "Moberg Pharma", 
+    "SANION.ST": "Saniona", "IMMUN.ST": "Immunovia", "CANT.ST": "Cantargia", "STVK.ST": "Sedana Medical", 
+    "BIOV-B.ST": "BioInvent",
+
+    # --- Industri, Energi & Råvaror ---
     "MUNTE.ST": "Munters Group", "BEGR.ST": "Beijer Alma", "BELE.ST": "Beijer Ref", "BUFAB.ST": "Bufab",
-    "MEKO.ST": "Mekonomen", "SYSTEM.ST": "Systemair", "RESURS.ST": "Resurs Holding", 
-    "TF_BANK.ST": "TF Bank", "VOLO.ST": "Volo", "REJL-B.ST": "Rejlers B", 
+    "MEKO.ST": "Mekonomen", "SYSTEM.ST": "Systemair", "MIDW-B.ST": "Midway B", "RESURS.ST": "Resurs Holding", 
+    "TF_BANK.ST": "TF Bank", "VOLO.ST": "Volo", "SEMCON.ST": "Semcon", "REJL-B.ST": "Rejlers B", 
     "PINS.ST": "Pricer B", "SITRA.ST": "SinterCast", "MALMK.ST": "Gränges", "BEGroup.ST": "BE Group", 
-    "RUG.ST": "RugVista", "NOLA-B.ST": "Nolato B", "CLIME.ST": "Climeon", "OX2.ST": "OX2", 
-    "MINESTO.ST": "Minesto", "SALT.ST": "SaltX Technology", "METV.ST": "Metacon",
-    "ECCO.ST": "Eolus Vind", "ARISE.ST": "Arise", "CIBUS.ST": "Cibus Nordic Real Estate",
+    "RUG.ST": "RugVista", "NOLA-B.ST": "Nolato B",
+
+    # --- Förnybar Energi, Cleantech & El ---
+    "CLIME.ST": "Climeon", "OX2.ST": "OX2", "MINESTO.ST": "Minesto", "NIL-B.ST": "Nilörngruppen",
+    "SALT.ST": "SaltX Technology", "AZELIO.ST": "Azelio", "SOLTEK.ST": "SolTech Energy", "METV.ST": "Metacon",
+    "ECCO.ST": "Eolus Vind", "ARISE.ST": "Arise", "CIBUS.ST": "Cibus Nordic Real Estate", "SVEF.ST": "Svenska Aerogel",
+
+    # --- Konsument, Retail & Tjänster ---
     "MID-B.ST": "Midsona B", "CLAS-B.ST": "Clas Ohlson", "NEWW-B.ST": "New Wave Group", "ITAB.ST": "ITAB Shop Concept", 
-    "GREEN.ST": "Green Landscaping", "COOR.ST": "Coor Service Mgmt", "TEQN.ST": "Teqnion", 
-    "PROF-B.ST": "Profoto B", "FERRO.ST": "Ferroamp", "GARO.ST": "Garo", "EPIW-B.ST": "Epiroc B", 
-    "LIFCO-B.ST": "Lifco B", "INDT.ST": "Indutrade", "ADDV.ST": "AddLife", "BALCO.ST": "Balco Group",
-    "TEQN.ST": "Teqnion", "SBB-D.ST": "SBB D"
+    "GREEN.ST": "Green Landscaping", "COOR.ST": "Coor Service Mgmt", "SRE.ST": "Svenska Resebranschen",
+
+    # --- Övriga med hög daglig rörelse ---
+    "ALM.ST": "ALM Equity", "POOL-B.ST": "Poolia B", "NGS.ST": "NGS Group", "PROB.ST": "Probi", 
+    "VICO.ST": "Vicore Pharma", "STRL.ST": "Studsvik", "KABE-B.ST": "Kabe B", "MALM.ST": "Malmbergs Elektriska",
+    "TEQN.ST": "Teqnion", "PROF-B.ST": "Profoto B", "NORD-B.ST": "Nordic Waterproofing", "FERRO.ST": "Ferroamp", 
+    "GARO.ST": "Garo", "EPIW-B.ST": "Epiroc B", "LIFCO-B.ST": "Lifco B", "INDT.ST": "Indutrade", 
+    "ADDV.ST": "AddLife", "VIK-B.ST": "Viking Supply", "BALCO.ST": "Balco Group", "BOULE.ST": "Boule Diagnostics",
+    "ELAN-B.ST": "Elanders B", "HAG.ST": "Hagströmer", "PPM.ST": "Peptonic Medical", "NIV-B.ST": "Nivika Fastigheter", 
+    "XANO-B.ST": "XANO Industri", "WRE-B.ST": "Wästbygg B", "SBB-D.ST": "SBB D"
 }
 
 AKTIER = list(NAMN_MAPPNING.keys())
@@ -90,24 +118,27 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # Hämtar data i timintervall (30 dagar ger bra underlag för 14-dagars indikatorer)
+        # Laddar ner all data stabilt via grupperade tickers
         stort_df = yf.download(alla_tickers_str, period="30d", interval="1h", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
         stort_df = pd.DataFrame()
 
     if not stort_df.empty:
-        total_aktier = len(AKTIER)
+        # Säkerställ att vi kan läsa av MultiIndex-kolumnerna korrekt
+        tillgangliga_tickers = stort_df.columns.levels[0] if isinstance(stort_df.columns, pd.MultiIndex) else []
+
         for i, ticker in enumerate(AKTIER):
-            status_text.write(f"Skannar ({i+1}/{total_aktier}): {NAMN_MAPPNING[ticker]}...")
-            progress_bar.progress((i + 1) / total_aktier)
+            status_text.write(f"Skannar ({i+1}/{len(AKTIER)}): {NAMN_MAPPNING[ticker]}...")
+            progress_bar.progress((i + 1) / len(AKTIER))
             
+            if ticker not in tillgangliga_tickers:
+                continue
+                
             try:
-                # Säkerställ att tickern faktiskt finns i den nedladdade datan
-                if ticker in stort_df.columns.levels[0]:
-                    df_ticker = stort_df[ticker].dropna(subset=['Close']).copy()
-                else:
-                    continue
+                # Bryt ut data för den enskilda aktien och rensa rader utan slutpris på ett säkert sätt
+                df_ticker = stort_df[ticker].copy()
+                df_ticker = df_ticker.dropna(subset=['Close'])
                 
                 if len(df_ticker) < 25: 
                     continue
@@ -117,7 +148,7 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                 if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris):
                     continue
                     
-                # Beräkna tekniska indikatorer
+                # Beräkna tekniska indikatorer via ta-biblioteket
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
                 macd_obj = ta.trend.MACD(df_ticker['Close'])
@@ -139,11 +170,9 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
                 
-                # Säker hantering av MACD-korsning (senaste 3 staplarna)
-                m_tidigare = df_macd.iloc[-4:-1]
-                s_tidigare = df_macd_sig.iloc[-4:-1]
-                macd_korsat_upp = (m > s) and (m_tidigare < s_tidigare).any()
-                macd_korsat_ner = (m < s) and (m_tidigare > s_tidigare).any()
+                # Säkrare MACD-korsning (fångar upp signaler inom de senaste 3 timmarna)
+                macd_korsat_upp = (m > s) and (df_macd.iloc[-4:-1] < df_macd_sig.iloc[-4:-1]).any()
+                macd_korsat_ner = (m < s) and (df_macd.iloc[-4:-1] > df_macd_sig.iloc[-4:-1]).any()
                 
                 macd_status = "Avvakta 🟡"
                 if m > s:
@@ -163,7 +192,6 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                         "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status
                     })
 
-                    # Filtreringsregler för köp och sälj
                     if rsi <= 35 and m > s:  
                         temp_ultra_köp.append({
                             "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal köp": rek_antal, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x"
@@ -178,7 +206,8 @@ if st.button("STARTA VOLATILITETSSÖKNING ⚡ (200 AKTIER)", use_container_width
                             "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"
                         })
             except Exception as e:
-                # Loggar fel tyst i bakgrunden så att skannern fortsätter rulla
+                # Loggar fel i terminalen istället för att krascha Streamlit-gränssnittet
+                print(f"Fel vid analys av {ticker}: {e}")
                 continue
 
     st.session_state.ultra_köp = temp_ultra_köp
