@@ -8,7 +8,7 @@ import os
 # Sätt sidkonfiguration
 st.set_page_config(page_title="Högvolatil Scanner & Journal Pro", layout="centered")
 
-st.title("⚡ Intraday Scanner med Automatisk Journal Pro")
+st.title("⚡ Intraday Scanner med Visuellt Beslutsstöd")
 
 # --- DATAHANTERING FÖR JOURNAL ---
 JOURNAL_FILE = "trading_journal.csv"
@@ -22,7 +22,7 @@ def load_journal():
     else:
         return pd.DataFrame(columns=["Datum", "Aktie", "Inköpspris", "ATR", "Target", "Stop_Loss", "Status"])
 
-def save_trade(aktie, pris, atr, target, stop):
+def save_trade(aktie, pris, atr, target, stop, signal):
     df = load_journal()
     ny_trade = pd.DataFrame([{
         "Datum": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
@@ -31,19 +31,20 @@ def save_trade(aktie, pris, atr, target, stop):
         "ATR": round(atr, 2),
         "Target": round(target, 2),
         "Stop_Loss": round(stop, 2),
+        "Strategi vid köp": signal,
         "Status": "Öppen ⏳"
     }])
     df = pd.concat([df, ny_trade], ignore_index=True)
     df.to_csv(JOURNAL_FILE, index=False)
 
 # --- INFORMATIONSFLIK ---
-with st.expander("ℹ️ STRATEGI & AUTOMATISK JOURNAL"):
+with st.expander("ℹ️ SÅ HÄR LÄSER DU DE VISUELLA SIGNALERNA"):
     st.markdown("""
-    ### Så här fungerar din Intraday-Scanner (5m):
-    1. **Kortsiktigt Momentum:** Söker efter aktier där EMA 20 ligger över EMA 50 på 5-minutersgrafen.
-    2. **Volymexplosion (RVOL):** Filtrerar fram aktier som handlas till minst 1.5x sin normala volym just nu.
-    3. **ATR-Riskhantering:** Beräknar automatiskt din exakta Stop Loss (1.5x ATR) och Target (3.0x ATR).
-    4. **Inbyggd Journal:** Logga dina snabba affärer för att hålla koll på din statistik.
+    ### Beslutsstöd för din Intraday-handel (5m):
+    * **MOMENTUM KÖP 🚀** – *Köpstyrka!* Priset stiger, kort trend är upp (EMA 20 > EMA 50) och volymen har exploderat till minst 1.5x det normala.
+    * **DIPP KÖP 📈** – *Rea i trenden!* Aktien är i grunden stark, men har tagit en tillfällig paus och blivit kortsiktigt översåld ($RSI \le 40$).
+    * **ÖVERKÖPT / SÄLJ 🔥** – *Varning/Vinsthemtagning!* Aktien har rusat alldeles för snabbt ($RSI \ge 75$). Risk för direkt rekyl nedåt. Köp inte här.
+    * **Avvakta 🟡** – Inget tydligt mönster eller för låg aktivitet just nu.
     """)
 
 # Totalt 200 noga utvalda högvolatila och likvida aktier tillgängliga på Avanza
@@ -128,7 +129,7 @@ if "rek_köp" not in st.session_state: st.session_state.rek_köp = []
 if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
-# Gränser anpassade för mindre kassa och snabbare intradayhandel
+# Risk- och kassainställningar
 MAX_AKTIEPRIS = 2000.0
 KASSA = 10000.0  
 MAX_RISK_PER_TRADE = 250.0  
@@ -143,7 +144,7 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # Ändrad till 60d och interval 5m för aktiv daytrading-skanning
+        # Hämtar 5-minutersbars (max 60 dagar historik tillåts av yfinance)
         stort_df = yf.download(alla_tickers_str, period="60d", interval="5m", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
@@ -174,7 +175,7 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
                 if len(df_ticker) < 50: 
                     continue
                 
-                # Snabbare indikatorer anpassade för 5-minuters bars
+                # Tekniska indikatorer för 5m-grafen
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=20).mean()
                 df_ema_snabb = ta.trend.ema_indicator(df_ticker['Close'], window=20)
@@ -199,7 +200,7 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
                 if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): 
                     continue
                 
-                # Omsättningsfilter (Pris * Volym) justerat för enskilda 5-minutersbars
+                # Filtrera bort extremt illikvida bars (Omsättning under 5000 kr under 5 minuter)
                 if (pris * vol) < 5000: 
                     continue
                     
@@ -210,24 +211,32 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
                 rek_antal = int(MAX_RISK_PER_TRADE // (atr_varde * 1.5)) if atr_varde > 0 else 1
                 max_absolut_antal = int(KASSA // pris)
 
+                # --- VISUELL STRATEGILOGIK (BESLUTSSTÖD) ---
+                rekommendation = "Avvakta 🟡"
+                
+                # Regel 1: Volym- och trendutbrott (Köp momentum)
+                if pris > ema_snabb and ema_snabb > ema_langsam and rvol >= 1.5 and (50 < rsi < 70):
+                    rekommendation = "MOMENTUM KÖP 🚀"
+                    temp_ultra_köp.append({
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)
+                    })
+                
+                # Regel 2: Översåld dipp i sund trend (Köp dippen)
+                elif ema_snabb > ema_langsam and rsi <= 40:
+                    rekommendation = "DIPP KÖP 📈"
+                    temp_rek_köp.append({
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)
+                    })
+                
+                # Regel 3: Helt utbränd och överköpt rörelse (Säljläge/Undvik)
+                elif rsi >= 75:
+                    rekommendation = "ÖVERKÖPT / SÄLJ 🔥"
+
                 if rek_antal > 0:
                     temp_alla.append({
-                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
-                        "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x",
-                        "Trend": "Upp 📈" if ema_snabb > ema_langsam else "Ner 📉", "ATR": round(atr_varde, 2)
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
+                        "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "ATR": round(atr_varde, 2)
                     })
-
-                    # STRATEGI 1: Momentum / Volymutbrott (Hög volym + Stark trend)
-                    if pris > df_ema_snabb.iloc[-1] and ema_snabb > ema_langsam and rvol >= 1.5 and (50 < rsi < 70):
-                        temp_ultra_köp.append({
-                            "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)
-                        })
-                    
-                    # STRATEGI 2: Intraday Dipp-Köp (Översåld på 5m mitt i en stark lång trend)
-                    elif ema_snabb > ema_langsam and rsi <= 40:
-                        temp_rek_köp.append({
-                            "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)
-                        })
             except Exception as e:
                 continue
 
@@ -240,26 +249,29 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
 
 # --- PRESENTATION PÅ SKÄRMEN ---
 if st.session_state.har_skannat:
-    st.success("🚀 ULTRA-MOMENTUM (Volymutbrott + Trend)")
+    st.success("🚀 ULTRA-MOMENTUM (Högsta prio för Utbrottshandel)")
     if st.session_state.ultra_köp: 
         st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
     else: 
-        st.info("Inga utbrott med hög volym hittades just nu. Kontrollera listan med dippar!")
+        st.info("Inga utbrott med hög volym hittades just nu. Sök efter köpvägda dippar nedan!")
         
     st.write("---")
-    st.info("📉 INTRADAY DIPP-KÖP (Översålda i stabil upptrend)")
+    st.info("📈 INTRADAY DIPP-KÖP (Översålda i stabil trend)")
     if st.session_state.rek_köp: 
         st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
     else: 
-        st.info("Inga snabba dippar identifierade i upptrender för tillfället.")
+        st.info("Inga tillfälliga dippar hittades i de rådande upptrenderna.")
         
     st.write("---")
-    st.subheader("📊 Komplett Översikt (Sorterad efter högst RVOL — mest aktivitet först)")
+    st.subheader("📊 Komplett Översikt (Sorterad efter hetaste signalerna först)")
     if st.session_state.alla_aktier:
         df_visa = pd.DataFrame(st.session_state.alla_aktier)
-        # Sorterar på RVOL-strängen genom att tillfälligt konvertera tillbaka till float
-        df_visa['rvol_float'] = df_visa['RVOL'].str.replace('x', '').astype(float)
-        df_visa = df_visa.sort_values(by="rvol_float", ascending=False).drop(columns=['rvol_float'])
+        
+        # Sorteringslogik för att lägga Köpsignaler högst upp och Sälj/Avvakta längst ner
+        sorterings_ordning = {"MOMENTUM KÖP 🚀": 0, "DIPP KÖP 📈": 1, "Avvakta 🟡": 2, "ÖVERKÖPT / SÄLJ 🔥": 3}
+        df_visa['prio'] = df_visa['Rekommendation'].map(sorterings_ordning)
+        df_visa = df_visa.sort_values(by="prio", ascending=True).drop(columns=['prio'])
+        
         st.dataframe(df_visa, use_container_width=True, height=400)
 
 # --- DYNAMISK RISK-KALKYLATOR & JOURNAL-LOGGNING ---
@@ -272,16 +284,17 @@ with col_a:
     kp = st.number_input("Ditt inköpspris:", min_value=0.0, step=0.01)
 with col_b:
     valda_atr = st.number_input("Aktiens ATR-värde:", min_value=0.0, step=0.01)
+    valda_signal = st.selectbox("Vilken signal handlar du på?", ["MOMENTUM KÖP 🚀", "DIPP KÖP 📈", "Manuell Setup 🧠"])
 
 if kp > 0 and valda_atr > 0:
     stop_loss_pris = kp - (1.5 * valda_atr)
     target_pris = kp + (3.0 * valda_atr)
     
-    st.write(f"🎯 **Target:** {target_pris:.2f} | 🛑 **Stop Loss:** {stop_loss_pris:.2f}")
+    st.write(f"🎯 **Target (3.0x ATR):** {target_pris:.2f} | 🛑 **Stop Loss (1.5x ATR):** {stop_loss_pris:.2f}")
     
     if st.button("Logga denna affär i Journalen 📝", use_container_width=True):
-        save_trade(valda_namn, kp, valda_atr, target_pris, stop_loss_pris)
-        st.success(f"Affären i {valda_namn} har sparats till din lokala journal!")
+        save_trade(valda_namn, kp, valda_atr, target_pris, stop_loss_pris, valda_signal)
+        st.success(f"Affären i {valda_namn} ({valda_signal}) har registrerats i din lokala journal!")
 
 # --- VISA AKTUELL JOURNAL ---
 st.write("---")
@@ -292,6 +305,6 @@ if not journal_df.empty:
     if st.button("Rensa journalhistorik 🗑️"):
         if os.path.exists(JOURNAL_FILE): 
             os.remove(JOURNAL_FILE)
-        st.rerun()  # Använder den moderna och säkra rerun-metoden
+        st.rerun()  
 else:
-    st.info("Din journal är tom. Logga en affär ovan för att börja samla statistik!")
+    st.info("Din journal är tom. Logga en affär ovan för att börja bygga upp din personliga statistik!")
