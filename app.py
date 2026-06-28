@@ -40,13 +40,14 @@ def save_trade(aktie, pris, atr, target, stop):
 with st.expander("ℹ️ STRATEGI & AUTOMATISK JOURNAL"):
     st.markdown("""
     ### Så här fungerar din nya Pro-Scanner:
-    1. **EMA 200 & RVOL:** Sorterar stenhårt fram aktier i upptrend med institutionell volym.
+    1. **EMA & RVOL:** Sorterar fram aktier i upptrend med ökad volym (momentum).
     2. **ATR-Riskhantering:** Beräknar automatiskt din exakta Stop Loss (1.5x ATR) och Target (3.0x ATR).
-    3. **Inbyggd Journal:** När du ser en signal du gillar, fyll i värdena längst ner för att spara affären. Det hjälper dig att spåra ditt kapital och se vilka aktier du tjänar mest pengar på!
+    3. **Inbyggd Journal:** Logga dina affärer för att hålla koll på din edge och utveckling över tid.
     """)
 
-# Optimerat urval av högvolatila och likvida aktier under 250 kr
+# Totalt 200 noga utvalda högvolatila och likvida aktier tillgängliga på Avanza
 NAMN_MAPPNING = {
+    # --- Ursprungliga svenska aktier (123 st) ---
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "ASMDEE-B.ST": "Asmodee (Gaming)",
     "SIVERS.ST": "Sivers Semiconductors", "FORTV.ST": "Fortnox (Mjukvara)", "EVO.ST": "Evolution (iGaming)", 
     "BETCO.ST": "Betsson (Gaming)", "G5EN.ST": "G5 Entertainment", "MTG-B.ST": "MTG (Gaming)", 
@@ -85,7 +86,37 @@ NAMN_MAPPNING = {
     "CIBUS.ST": "Cibus Nordic Real Estate", "TEQN.ST": "Teqnion", "PROF-B.ST": "Profoto B", 
     "NORD-B.ST": "Nordic Waterproofing", "FERRO.ST": "Ferroamp", "GARO.ST": "Garo", "EPIW-B.ST": "Epiroc B", 
     "LIFCO-B.ST": "Lifco B", "INDT.ST": "Indutrade", "VIK-B.ST": "Viking Supply", "BALCO.ST": "Balco Group", 
-    "BOULE.ST": "Boule Diagnostics", "SBB-D.ST": "SBB D"
+    "BOULE.ST": "Boule Diagnostics", "SBB-D.ST": "SBB D",
+
+    # --- USA: Tech & Growth (21 st) ---
+    "AAPL": "Apple (Tech)", "MSFT": "Microsoft (Tech)", "NVDA": "NVIDIA (AI/Semiconductors)",
+    "AMD": "AMD (Semiconductors)", "TSLA": "Tesla (Elbilar)", "AMZN": "Amazon (E-handel)",
+    "META": "Meta Platforms (Tech)", "GOOGL": "Alphabet (Tech)", "NFLX": "Netflix (Streaming)",
+    "PLTR": "Palantir (AI/Mjukvara)", "COIN": "Coinbase (Krypto)", "MARA": "Marathon Digital (Krypto/Mining)",
+    "RIOT": "Riot Platforms (Krypto/Mining)", "HOOD": "Robinhood (Fintech)", "SOFI": "SoFi Technologies (Fintech)",
+    "U": "Unity Software (Gaming)", "TTD": "The Trade Desk (Adtech)", "NET": "Cloudflare (Tech)",
+    "CRWD": "CrowdStrike (Cybersäkerhet)", "PLUG": "Plug Power (Vätgas)", "FCEL": "FuelCell Energy (Vätgas)",
+
+    # --- Danmark (8 st) ---
+    "NOVO-B.CO": "Novo Nordisk (Medicin)", "DSV.CO": "DSV (Logistik)", "VESTAS.CO": "Vestas Wind (Grön Energi)",
+    "ORSTED.CO": "Ørsted (Grön Energi)", "ZEAL.CO": "Zealand Pharma (Biotech)", "BAVA.CO": "Bavarian Nordic (Biotech)",
+    "MAERSK-B.CO": "A.P. Møller - Mærsk", "CARL-B.CO": "Carlsberg B",
+    
+    # --- Finland (6 st) ---
+    "NESTE.HE": "Neste (Förnybar olja)", "NOKIA.HE": "Nokia (Telekom)", "WAR1V.HE": "Wärtsilä (Energi/Marin)",
+    "OUT1V.HE": "Outokumpu (Stål)", "METSO.HE": "Metso (Industri)", "VALMT.HE": "Valmet (Industri)",
+
+    # --- Svenska tillägg (11 st) ---
+    "ALFA.ST": "Alfa Laval", "ELUX-A.ST": "Electrolux A", "GETI-B.ST": "Getinge",
+    "LUMI.ST": "Lundin Mining", "NCC-A.ST": "NCC A", "SKAG.ST": "Skanska B", 
+    "TEL2-A.ST": "Tele2 A", "TREL-B.ST": "Trelleborg", "NOTE.ST": "Note (Tech)", 
+    "CTEK.ST": "CTEK (Laddare)", "OX2.ST": "OX2 (Grön Energi)",
+
+    # --- Globala Volatila Sektorer: Uran, Krypto & Cannabis (11 st) ---
+    "CCJ": "Cameco (Uran)", "UUUU": "Energy Fuels (Uran)", "URA": "Uranium ETF",
+    "CLEAN": "CleanSpark (Bitcoin Mining)", "HUT": "Hut 8 Mining", "MSTR": "MicroStrategy (Bitcoin-ägare)",
+    "TLRY": "Tilray Brands (Cannabis)", "CGC": "Canopy Growth (Cannabis)", "ROKU": "Roku (Streaming)",
+    "DKNG": "DraftKings (Betting)", "PATH": "UiPath (AI/Automation)"
 }
 
 AKTIER = list(NAMN_MAPPNING.keys())
@@ -97,8 +128,9 @@ if "ultra_sälj" not in st.session_state: st.session_state.ultra_sälj = []
 if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
-MAX_AKTIEPRIS = 250.0
-KASSA = 1000.0  
+# Gränser anpassade för att tillåta både svenska och amerikanska aktier (t.ex. dyrare priser)
+MAX_AKTIEPRIS = 2000.0
+KASSA = 10000.0  
 MAX_RISK_PER_TRADE = 250.0  
 
 if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=True):
@@ -118,7 +150,6 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
         stort_df = pd.DataFrame()
 
     if not stort_df.empty:
-        # Säkerställ MultiIndex för robust ticker-validering
         if isinstance(stort_df.columns, pd.MultiIndex):
             tillgangliga_tickers = stort_df.columns.levels[0]
         else:
@@ -132,8 +163,12 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 continue
                 
             try:
+                # Kolla om tickern faktiskt har data i stort_df innan vi kör copy()
+                if ticker not in stort_df.columns.levels[0] if isinstance(stort_df.columns, pd.MultiIndex) else ticker not in stort_df.columns:
+                    continue
+                    
                 df_ticker = stort_df[ticker].copy().dropna(subset=['Close'])
-                if len(df_ticker) < 50: 
+                if len(df_ticker) < 30: 
                     continue
                 
                 pris = float(df_ticker['Close'].iloc[-1])
@@ -141,14 +176,14 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): 
                     continue
                 
-                # Omsättningsfilter (Min 40k kr senaste timmen)
-                if (pris * vol) < 40000: 
+                # Mjukat upp omsättningsfiltret något till 20k under lugna timmar
+                if (pris * vol) < 20000: 
                     continue
                     
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
                 
-                window_ema = 200 if len(df_ticker) >= 200 else 50
+                window_ema = 100 if len(df_ticker) >= 100 else 30 
                 df_ema = ta.trend.ema_indicator(df_ticker['Close'], window=window_ema)
                 df_atr = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
                 
@@ -156,7 +191,6 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 df_macd = macd_obj.macd()
                 df_macd_sig = macd_obj.macd_signal()
                 
-                # Säker kontroll mot tomma värden och NaN innan iloc[-1]
                 if df_rsi.empty or df_macd.empty or df_ema.empty: 
                     continue
                 if pd.isna(df_rsi.iloc[-1]) or pd.isna(df_macd.iloc[-1]) or pd.isna(df_ema.iloc[-1]): 
@@ -176,30 +210,32 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 fullt_namn = NAMN_MAPPNING[ticker]
                 i_upptrend = pris > ema_filter
                 
-                macd_korsat_upp = (m > s) and (df_macd.iloc[-4:-1] < df_macd_sig.iloc[-4:-1]).any()
-                macd_korsat_ner = (m < s) and (df_macd.iloc[-4:-1] > df_macd_sig.iloc[-4:-1]).any()
+                macd_korsat_upp = (m > s) and (df_macd.iloc[-6:-1] < df_macd_sig.iloc[-6:-1]).any()
+                macd_korsat_ner = (m < s) and (df_macd.iloc[-6:-1] > df_macd_sig.iloc[-6:-1]).any()
                 
                 macd_status = "Avvakta 🟡"
                 if m > s: macd_status = "Köp 🟢" if macd_korsat_upp else "Stark 📈"
                 elif m < s: macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
 
-                rek_antal = int(MAX_RISK_PER_TRADE // pris) or 1
+                rek_antal = int(MAX_RISK_PER_TRADE // (atr_varde * 1.5)) if atr_varde > 0 else 1
                 max_absolut_antal = int(KASSA // pris)
 
                 if rek_antal > 0:
                     temp_alla.append({
-                        "Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
                         "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status,
                         "Trend": "Upp 📈" if i_upptrend else "Ner 📉", "ATR": round(atr_varde, 2)
                     })
 
-                    if rsi <= 38 and m > s and i_upptrend and rvol >= 1.6:  
-                        temp_ultra_köp.append({"Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)})
-                    elif rsi <= 30 and pris > pris_förra_bar and i_upptrend:
-                        temp_rek_köp.append({"Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)})
+                    # DYNAMISKA OCH OPTIMERADE FILTER FOR MER TRÄFFAR
+                    if rsi <= 45 and m > s and i_upptrend and rvol >= 1.2:  
+                        temp_ultra_köp.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)})
+                    
+                    elif rsi <= 35 and i_upptrend and utveckling_bar > -0.2:
+                        temp_rek_köp.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)})
                         
-                    if (rsi >= 72 and macd_korsat_ner) or rsi >= 78:
-                        temp_sälj.append({"Aktie": fullt_namn, "Pris (SEK)": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Extremt Överköpt 🔥" if rsi >= 78 else "Vändning Nedåt 🚨"})
+                    if rsi >= 75 or (rsi >= 70 and macd_korsat_ner):
+                        temp_sälj.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Överköpt 🔥"})
             except Exception as e:
                 continue
 
@@ -217,20 +253,20 @@ if st.session_state.har_skannat:
     if st.session_state.ultra_köp: 
         st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
     else: 
-        st.info("Inga aktier har tillräckligt starka köpsignaler just nu.")
+        st.info("Inga aktier matchar de strikta Ultra-kraven just nu. Kolla Dipp-köp eller listan nedan!")
         
     st.write("---")
-    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda i upptrend)")
+    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda i stabil upptrend)")
     if st.session_state.rek_köp: 
         st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
     else: 
-        st.info("Inga säkra dippar i upptrender just nu.")
+        st.info("Inga dippar identifierade i upptrender just nu.")
         
     st.write("---")
-    st.subheader("📊 Komplett Översikt")
+    st.subheader("📊 Komplett Översikt (Sorterad efter lägst RSI — bäst köpläge först)")
     if st.session_state.alla_aktier:
         df_visa = pd.DataFrame(st.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
-        st.dataframe(df_visa, use_container_width=True, height=300)
+        st.dataframe(df_visa, use_container_width=True, height=400)
 
 # --- DYNAMISK RISK-KALKYLATOR & JOURNAL-LOGGNING ---
 st.write("---")
@@ -239,8 +275,7 @@ st.subheader("💼 Smart Riskkalkylator & Journal")
 col_a, col_b = st.columns(2)
 with col_a:
     valda_namn = st.text_input("Aktiens namn (t.ex. Sinch):")
-    # Ändrat step=0.01 för att tillåta exakta ören på svenska aktier
-    kp = st.number_input("Ditt inköpspris (SEK):", min_value=0.0, step=0.01)
+    kp = st.number_input("Ditt inköpspris:", min_value=0.0, step=0.01)
 with col_b:
     valda_atr = st.number_input("Aktiens ATR-värde:", min_value=0.0, step=0.01)
 
@@ -248,7 +283,7 @@ if kp > 0 and valda_atr > 0:
     stop_loss_pris = kp - (1.5 * valda_atr)
     target_pris = kp + (3.0 * valda_atr)
     
-    st.write(f"🎯 **Target:** {target_pris:.2f} SEK | 🛑 **Stop Loss:** {stop_loss_pris:.2f} SEK")
+    st.write(f"🎯 **Target:** {target_pris:.2f} | 🛑 **Stop Loss:** {stop_loss_pris:.2f}")
     
     if st.button("Logga denna affär i Journalen 📝", use_container_width=True):
         save_trade(valda_namn, kp, valda_atr, target_pris, stop_loss_pris)
