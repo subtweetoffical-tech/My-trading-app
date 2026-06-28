@@ -144,7 +144,8 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        stort_df = yf.download(alla_tickers_str, period="60d", interval="1h", progress=False, group_by="ticker")
+        # Ändrad period till 730d så att EMA 100 kan beräknas på timgraf (1h)
+        stort_df = yf.download(alla_tickers_str, period="730d", interval="1h", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
         stort_df = pd.DataFrame()
@@ -163,10 +164,14 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 continue
                 
             try:
-                # Kolla om tickern faktiskt har data i stort_df innan vi kör copy()
-                if ticker not in stort_df.columns.levels[0] if isinstance(stort_df.columns, pd.MultiIndex) else ticker not in stort_df.columns:
-                    continue
-                    
+                # Korrigerad och förenklad MultiIndex-kontroll
+                if isinstance(stort_df.columns, pd.MultiIndex):
+                    if ticker not in stort_df.columns.levels[0]:
+                        continue
+                else:
+                    if ticker not in stort_df.columns:
+                        continue
+                        
                 df_ticker = stort_df[ticker].copy().dropna(subset=['Close'])
                 if len(df_ticker) < 30: 
                     continue
@@ -210,8 +215,9 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 fullt_namn = NAMN_MAPPNING[ticker]
                 i_upptrend = pris > ema_filter
                 
-                macd_korsat_upp = (m > s) and (df_macd.iloc[-6:-1] < df_macd_sig.iloc[-6:-1]).any()
-                macd_korsat_ner = (m < s) and (df_macd.iloc[-6:-1] > df_macd_sig.iloc[-6:-1]).any()
+                # Lagt till .values för säker jämförelse mellan Pandas-serier i slicing
+                macd_korsat_upp = (m > s) and (df_macd.iloc[-6:-1].values < df_macd_sig.iloc[-6:-1].values).any()
+                macd_korsat_ner = (m < s) and (df_macd.iloc[-6:-1].values > df_macd_sig.iloc[-6:-1].values).any()
                 
                 macd_status = "Avvakta 🟡"
                 if m > s: macd_status = "Köp 🟢" if macd_korsat_upp else "Stark 📈"
@@ -227,7 +233,7 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                         "Trend": "Upp 📈" if i_upptrend else "Ner 📉", "ATR": round(atr_varde, 2)
                     })
 
-                    # DYNAMISKA OCH OPTIMERADE FILTER FOR MER TRÄFFAR
+                    # DYNAMISKA OCH OPTIMERADE FILTER FÖR MER TRÄFFAR
                     if rsi <= 45 and m > s and i_upptrend and rvol >= 1.2:  
                         temp_ultra_köp.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)})
                     
