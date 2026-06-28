@@ -8,7 +8,7 @@ import os
 # Sätt sidkonfiguration
 st.set_page_config(page_title="Högvolatil Scanner & Journal Pro", layout="centered")
 
-st.title("⚡ Trading Scanner med Automatisk Journal Pro")
+st.title("⚡ Intraday Scanner med Automatisk Journal Pro")
 
 # --- DATAHANTERING FÖR JOURNAL ---
 JOURNAL_FILE = "trading_journal.csv"
@@ -39,10 +39,11 @@ def save_trade(aktie, pris, atr, target, stop):
 # --- INFORMATIONSFLIK ---
 with st.expander("ℹ️ STRATEGI & AUTOMATISK JOURNAL"):
     st.markdown("""
-    ### Så här fungerar din nya Pro-Scanner:
-    1. **EMA & RVOL:** Sorterar fram aktier i upptrend med ökad volym (momentum).
-    2. **ATR-Riskhantering:** Beräknar automatiskt din exakta Stop Loss (1.5x ATR) och Target (3.0x ATR).
-    3. **Inbyggd Journal:** Logga dina affärer för att hålla koll på din edge och utveckling över tid.
+    ### Så här fungerar din Intraday-Scanner (5m):
+    1. **Kortsiktigt Momentum:** Söker efter aktier där EMA 20 ligger över EMA 50 på 5-minutersgrafen.
+    2. **Volymexplosion (RVOL):** Filtrerar fram aktier som handlas till minst 1.5x sin normala volym just nu.
+    3. **ATR-Riskhantering:** Beräknar automatiskt din exakta Stop Loss (1.5x ATR) och Target (3.0x ATR).
+    4. **Inbyggd Journal:** Logga dina snabba affärer för att hålla koll på din statistik.
     """)
 
 # Totalt 200 noga utvalda högvolatila och likvida aktier tillgängliga på Avanza
@@ -124,28 +125,26 @@ AKTIER = list(NAMN_MAPPNING.keys())
 # Initiera session state
 if "ultra_köp" not in st.session_state: st.session_state.ultra_köp = []
 if "rek_köp" not in st.session_state: st.session_state.rek_köp = []
-if "ultra_sälj" not in st.session_state: st.session_state.ultra_sälj = []
 if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
-# Gränser anpassade för att tillåta både svenska och amerikanska aktier (t.ex. dyrare priser)
+# Gränser anpassade för mindre kassa och snabbare intradayhandel
 MAX_AKTIEPRIS = 2000.0
 KASSA = 10000.0  
 MAX_RISK_PER_TRADE = 250.0  
 
-if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=True):
+if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_width=True):
     status_text = st.empty()
     progress_bar = st.progress(0)
     
     temp_ultra_köp = []
     temp_rek_köp = []
-    temp_sälj = []
     temp_alla = []
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # Ändrad period till 730d så att EMA 100 kan beräknas på timgraf (1h)
-        stort_df = yf.download(alla_tickers_str, period="730d", interval="1h", progress=False, group_by="ticker")
+        # Ändrad till 60d och interval 5m för aktiv daytrading-skanning
+        stort_df = yf.download(alla_tickers_str, period="60d", interval="5m", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
         stort_df = pd.DataFrame()
@@ -164,7 +163,6 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 continue
                 
             try:
-                # Korrigerad och förenklad MultiIndex-kontroll
                 if isinstance(stort_df.columns, pd.MultiIndex):
                     if ticker not in stort_df.columns.levels[0]:
                         continue
@@ -173,81 +171,68 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                         continue
                         
                 df_ticker = stort_df[ticker].copy().dropna(subset=['Close'])
-                if len(df_ticker) < 30: 
+                if len(df_ticker) < 50: 
                     continue
                 
+                # Snabbare indikatorer anpassade för 5-minuters bars
+                df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
+                df_vol_snitt = df_ticker['Volume'].rolling(window=20).mean()
+                df_ema_snabb = ta.trend.ema_indicator(df_ticker['Close'], window=20)
+                df_ema_langsam = ta.trend.ema_indicator(df_ticker['Close'], window=50)
+                df_atr = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
+                
+                if df_rsi.empty or df_ema_snabb.empty or df_ema_langsam.empty: 
+                    continue
+                if pd.isna(df_rsi.iloc[-1]) or pd.isna(df_ema_snabb.iloc[-1]) or pd.isna(df_ema_langsam.iloc[-1]): 
+                    continue
+
                 pris = float(df_ticker['Close'].iloc[-1])
                 vol = float(df_ticker['Volume'].iloc[-1])
+                öppning = float(df_ticker['Open'].iloc[-1])
+                
+                rsi = float(df_rsi.iloc[-1])
+                v_snitt = float(df_vol_snitt.iloc[-1])
+                ema_snabb = float(df_ema_snabb.iloc[-1])
+                ema_langsam = float(df_ema_langsam.iloc[-1])
+                atr_varde = float(df_atr.iloc[-1])
+                
                 if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): 
                     continue
                 
-                # Mjukat upp omsättningsfiltret något till 20k under lugna timmar
-                if (pris * vol) < 20000: 
+                # Omsättningsfilter (Pris * Volym) justerat för enskilda 5-minutersbars
+                if (pris * vol) < 5000: 
                     continue
                     
-                df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
-                df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
-                
-                window_ema = 100 if len(df_ticker) >= 100 else 30 
-                df_ema = ta.trend.ema_indicator(df_ticker['Close'], window=window_ema)
-                df_atr = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
-                
-                macd_obj = ta.trend.MACD(df_ticker['Close'])
-                df_macd = macd_obj.macd()
-                df_macd_sig = macd_obj.macd_signal()
-                
-                if df_rsi.empty or df_macd.empty or df_ema.empty: 
-                    continue
-                if pd.isna(df_rsi.iloc[-1]) or pd.isna(df_macd.iloc[-1]) or pd.isna(df_ema.iloc[-1]): 
-                    continue
-
-                pris_förra_bar = float(df_ticker['Close'].iloc[-2])
-                öppning = float(df_ticker['Open'].iloc[-1])
-                rsi = float(df_rsi.iloc[-1])
-                v_snitt = float(df_vol_snitt.iloc[-1])
-                m = float(df_macd.iloc[-1])
-                s = float(df_macd_sig.iloc[-1])
-                ema_filter = float(df_ema.iloc[-1])
-                atr_varde = float(df_atr.iloc[-1])
-                
                 rvol = vol / v_snitt if v_snitt > 0 else 1.0
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
-                i_upptrend = pris > ema_filter
                 
-                # Lagt till .values för säker jämförelse mellan Pandas-serier i slicing
-                macd_korsat_upp = (m > s) and (df_macd.iloc[-6:-1].values < df_macd_sig.iloc[-6:-1].values).any()
-                macd_korsat_ner = (m < s) and (df_macd.iloc[-6:-1].values > df_macd_sig.iloc[-6:-1].values).any()
-                
-                macd_status = "Avvakta 🟡"
-                if m > s: macd_status = "Köp 🟢" if macd_korsat_upp else "Stark 📈"
-                elif m < s: macd_status = "Sälj 🔴" if macd_korsat_ner else "Svag 📉"
-
                 rek_antal = int(MAX_RISK_PER_TRADE // (atr_varde * 1.5)) if atr_varde > 0 else 1
                 max_absolut_antal = int(KASSA // pris)
 
                 if rek_antal > 0:
                     temp_alla.append({
                         "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
-                        "Senaste timmen %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "MACD": macd_status,
-                        "Trend": "Upp 📈" if i_upptrend else "Ner 📉", "ATR": round(atr_varde, 2)
+                        "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x",
+                        "Trend": "Upp 📈" if ema_snabb > ema_langsam else "Ner 📉", "ATR": round(atr_varde, 2)
                     })
 
-                    # DYNAMISKA OCH OPTIMERADE FILTER FÖR MER TRÄFFAR
-                    if rsi <= 45 and m > s and i_upptrend and rvol >= 1.2:  
-                        temp_ultra_köp.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)})
+                    # STRATEGI 1: Momentum / Volymutbrott (Hög volym + Stark trend)
+                    if pris > df_ema_snabb.iloc[-1] and ema_snabb > ema_langsam and rvol >= 1.5 and (50 < rsi < 70):
+                        temp_ultra_köp.append({
+                            "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)
+                        })
                     
-                    elif rsi <= 35 and i_upptrend and utveckling_bar > -0.2:
-                        temp_rek_köp.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)})
-                        
-                    if rsi >= 75 or (rsi >= 70 and macd_korsat_ner):
-                        temp_sälj.append({"Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "Anledning": "Överköpt 🔥"})
+                    # STRATEGI 2: Intraday Dipp-Köp (Översåld på 5m mitt i en stark lång trend)
+                    elif ema_snabb > ema_langsam and rsi <= 40:
+                        temp_rek_köp.append({
+                            "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)
+                        })
             except Exception as e:
                 continue
 
     st.session_state.ultra_köp = temp_ultra_köp
     st.session_state.rek_köp = temp_rek_köp
-    st.session_state.ultra_sälj = temp_sälj
     st.session_state.alla_aktier = temp_alla
     st.session_state.har_skannat = True
     progress_bar.empty()
@@ -255,23 +240,26 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
 
 # --- PRESENTATION PÅ SKÄRMEN ---
 if st.session_state.har_skannat:
-    st.success("🌟 ULTRA-KÖP (Trend + Volym + RSI + MACD)")
+    st.success("🚀 ULTRA-MOMENTUM (Volymutbrott + Trend)")
     if st.session_state.ultra_köp: 
         st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
     else: 
-        st.info("Inga aktier matchar de strikta Ultra-kraven just nu. Kolla Dipp-köp eller listan nedan!")
+        st.info("Inga utbrott med hög volym hittades just nu. Kontrollera listan med dippar!")
         
     st.write("---")
-    st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda i stabil upptrend)")
+    st.info("📉 INTRADAY DIPP-KÖP (Översålda i stabil upptrend)")
     if st.session_state.rek_köp: 
         st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
     else: 
-        st.info("Inga dippar identifierade i upptrender just nu.")
+        st.info("Inga snabba dippar identifierade i upptrender för tillfället.")
         
     st.write("---")
-    st.subheader("📊 Komplett Översikt (Sorterad efter lägst RSI — bäst köpläge först)")
+    st.subheader("📊 Komplett Översikt (Sorterad efter högst RVOL — mest aktivitet först)")
     if st.session_state.alla_aktier:
-        df_visa = pd.DataFrame(st.session_state.alla_aktier).sort_values(by="RSI", ascending=True)
+        df_visa = pd.DataFrame(st.session_state.alla_aktier)
+        # Sorterar på RVOL-strängen genom att tillfälligt konvertera tillbaka till float
+        df_visa['rvol_float'] = df_visa['RVOL'].str.replace('x', '').astype(float)
+        df_visa = df_visa.sort_values(by="rvol_float", ascending=False).drop(columns=['rvol_float'])
         st.dataframe(df_visa, use_container_width=True, height=400)
 
 # --- DYNAMISK RISK-KALKYLATOR & JOURNAL-LOGGNING ---
@@ -304,6 +292,6 @@ if not journal_df.empty:
     if st.button("Rensa journalhistorik 🗑️"):
         if os.path.exists(JOURNAL_FILE): 
             os.remove(JOURNAL_FILE)
-        st.rerun()
+        st.rerun()  # Använder den moderna och säkra rerun-metoden
 else:
     st.info("Din journal är tom. Logga en affär ovan för att börja samla statistik!")
