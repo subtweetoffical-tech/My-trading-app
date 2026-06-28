@@ -3,39 +3,11 @@ import yfinance as yf
 import pandas as pd
 import ta
 import numpy as np
-import os
 
 # Sätt sidkonfiguration
-st.set_page_config(page_title="Högvolatil Scanner & Journal Pro", layout="centered")
+st.set_page_config(page_title="Högvolatil Scanner Pro", layout="centered")
 
 st.title("⚡ Intraday Scanner med Visuellt Beslutsstöd")
-
-# --- DATAHANTERING FÖR JOURNAL ---
-JOURNAL_FILE = "trading_journal.csv"
-
-def load_journal():
-    if os.path.exists(JOURNAL_FILE):
-        try:
-            return pd.read_csv(JOURNAL_FILE)
-        except:
-            return pd.DataFrame(columns=["Datum", "Aktie", "Inköpspris", "ATR", "Target", "Stop_Loss", "Status"])
-    else:
-        return pd.DataFrame(columns=["Datum", "Aktie", "Inköpspris", "ATR", "Target", "Stop_Loss", "Status"])
-
-def save_trade(aktie, pris, atr, target, stop, signal):
-    df = load_journal()
-    ny_trade = pd.DataFrame([{
-        "Datum": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-        "Aktie": aktie,
-        "Inköpspris": round(pris, 2),
-        "ATR": round(atr, 2),
-        "Target": round(target, 2),
-        "Stop_Loss": round(stop, 2),
-        "Strategi vid köp": signal,
-        "Status": "Öppen ⏳"
-    }])
-    df = pd.concat([df, ny_trade], ignore_index=True)
-    df.to_csv(JOURNAL_FILE, index=False)
 
 # --- INFORMATIONSFLIK ---
 with st.expander("ℹ️ SÅ HÄR LÄSER DU DE VISUELLA SIGNALERNA"):
@@ -129,10 +101,7 @@ if "rek_köp" not in st.session_state: st.session_state.rek_köp = []
 if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
 if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
 
-# Risk- och kassainställningar
 MAX_AKTIEPRIS = 2000.0
-KASSA = 10000.0  
-MAX_RISK_PER_TRADE = 250.0  
 
 if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_width=True):
     status_text = st.empty()
@@ -144,7 +113,6 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # Hämtar 5-minutersbars (max 60 dagar historik tillåts av yfinance)
         stort_df = yf.download(alla_tickers_str, period="60d", interval="5m", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
@@ -207,9 +175,6 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
                 rvol = vol / v_snitt if v_snitt > 0 else 1.0
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
-                
-                rek_antal = int(MAX_RISK_PER_TRADE // (atr_varde * 1.5)) if atr_varde > 0 else 1
-                max_absolut_antal = int(KASSA // pris)
 
                 # --- VISUELL STRATEGILOGIK (BESLUTSSTÖD) ---
                 rekommendation = "Avvakta 🟡"
@@ -232,11 +197,10 @@ if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_w
                 elif rsi >= 75:
                     rekommendation = "ÖVERKÖPT / SÄLJ 🔥"
 
-                if rek_antal > 0:
-                    temp_alla.append({
-                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "Rek. Antal": rek_antal, "Max Antal": max_absolut_antal,
-                        "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "ATR": round(atr_varde, 2)
-                    })
+                temp_alla.append({
+                    "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation,
+                    "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "ATR": round(atr_varde, 2)
+                })
             except Exception as e:
                 continue
 
@@ -272,39 +236,4 @@ if st.session_state.har_skannat:
         df_visa['prio'] = df_visa['Rekommendation'].map(sorterings_ordning)
         df_visa = df_visa.sort_values(by="prio", ascending=True).drop(columns=['prio'])
         
-        st.dataframe(df_visa, use_container_width=True, height=400)
-
-# --- DYNAMISK RISK-KALKYLATOR & JOURNAL-LOGGNING ---
-st.write("---")
-st.subheader("💼 Smart Riskkalkylator & Journal")
-
-col_a, col_b = st.columns(2)
-with col_a:
-    valda_namn = st.text_input("Aktiens namn (t.ex. Sinch):")
-    kp = st.number_input("Ditt inköpspris:", min_value=0.0, step=0.01)
-with col_b:
-    valda_atr = st.number_input("Aktiens ATR-värde:", min_value=0.0, step=0.01)
-    valda_signal = st.selectbox("Vilken signal handlar du på?", ["MOMENTUM KÖP 🚀", "DIPP KÖP 📈", "Manuell Setup 🧠"])
-
-if kp > 0 and valda_atr > 0:
-    stop_loss_pris = kp - (1.5 * valda_atr)
-    target_pris = kp + (3.0 * valda_atr)
-    
-    st.write(f"🎯 **Target (3.0x ATR):** {target_pris:.2f} | 🛑 **Stop Loss (1.5x ATR):** {stop_loss_pris:.2f}")
-    
-    if st.button("Logga denna affär i Journalen 📝", use_container_width=True):
-        save_trade(valda_namn, kp, valda_atr, target_pris, stop_loss_pris, valda_signal)
-        st.success(f"Affären i {valda_namn} ({valda_signal}) har registrerats i din lokala journal!")
-
-# --- VISA AKTUELL JOURNAL ---
-st.write("---")
-st.subheader("🗂️ Sparade Affärer (Din Trading-journal)")
-journal_df = load_journal()
-if not journal_df.empty:
-    st.dataframe(journal_df, use_container_width=True)
-    if st.button("Rensa journalhistorik 🗑️"):
-        if os.path.exists(JOURNAL_FILE): 
-            os.remove(JOURNAL_FILE)
-        st.rerun()  
-else:
-    st.info("Din journal är tom. Logga en affär ovan för att börja bygga upp din personliga statistik!")
+        st.dataframe(df_visa, use_container_width=True, height=500)
