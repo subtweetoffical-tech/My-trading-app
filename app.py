@@ -118,7 +118,11 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
         stort_df = pd.DataFrame()
 
     if not stort_df.empty:
-        tillgangliga_tickers = stort_df.columns.levels[0] if isinstance(stort_df.columns, pd.MultiIndex) else []
+        # Säkerställ MultiIndex för robust ticker-validering
+        if isinstance(stort_df.columns, pd.MultiIndex):
+            tillgangliga_tickers = stort_df.columns.levels[0]
+        else:
+            tillgangliga_tickers = []
 
         for i, ticker in enumerate(AKTIER):
             status_text.write(f"Skannar ({i+1}/{len(AKTIER)}): {NAMN_MAPPNING[ticker]}...")
@@ -129,14 +133,17 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 
             try:
                 df_ticker = stort_df[ticker].copy().dropna(subset=['Close'])
-                if len(df_ticker) < 50: continue
+                if len(df_ticker) < 50: 
+                    continue
                 
                 pris = float(df_ticker['Close'].iloc[-1])
                 vol = float(df_ticker['Volume'].iloc[-1])
-                if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): continue
+                if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): 
+                    continue
                 
                 # Omsättningsfilter (Min 40k kr senaste timmen)
-                if (pris * vol) < 40000: continue
+                if (pris * vol) < 40000: 
+                    continue
                     
                 df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
                 df_vol_snitt = df_ticker['Volume'].rolling(window=10).mean()
@@ -149,7 +156,11 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
                 df_macd = macd_obj.macd()
                 df_macd_sig = macd_obj.macd_signal()
                 
-                if df_rsi.isna().iloc[-1] or df_macd.isna().iloc[-1] or df_ema.isna().iloc[-1]: continue
+                # Säker kontroll mot tomma värden och NaN innan iloc[-1]
+                if df_rsi.empty or df_macd.empty or df_ema.empty: 
+                    continue
+                if pd.isna(df_rsi.iloc[-1]) or pd.isna(df_macd.iloc[-1]) or pd.isna(df_ema.iloc[-1]): 
+                    continue
 
                 pris_förra_bar = float(df_ticker['Close'].iloc[-2])
                 öppning = float(df_ticker['Open'].iloc[-1])
@@ -203,13 +214,17 @@ if st.button("STARTA AVANCERAD VOLATILITETSSÖKNING ⚡", use_container_width=Tr
 # --- PRESENTATION PÅ SKÄRMEN ---
 if st.session_state.har_skannat:
     st.success("🌟 ULTRA-KÖP (Trend + Volym + RSI + MACD)")
-    if st.session_state.ultra_köp: st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
-    else: st.info("Inga aktier har tillräckligt starka köpsignaler just nu.")
+    if st.session_state.ultra_köp: 
+        st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
+    else: 
+        st.info("Inga aktier har tillräckligt starka köpsignaler just nu.")
         
     st.write("---")
     st.info("👍 REKOMMENDERADE DIPP-KÖP (Översålda i upptrend)")
-    if st.session_state.rek_köp: st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
-    else: st.info("Inga säkra dippar i upptrender just nu.")
+    if st.session_state.rek_köp: 
+        st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
+    else: 
+        st.info("Inga säkra dippar i upptrender just nu.")
         
     st.write("---")
     st.subheader("📊 Komplett Översikt")
@@ -224,9 +239,10 @@ st.subheader("💼 Smart Riskkalkylator & Journal")
 col_a, col_b = st.columns(2)
 with col_a:
     valda_namn = st.text_input("Aktiens namn (t.ex. Sinch):")
-    kp = st.number_input("Ditt inköpspris (SEK):", min_value=0.0, step=1.0)
+    # Ändrat step=0.01 för att tillåta exakta ören på svenska aktier
+    kp = st.number_input("Ditt inköpspris (SEK):", min_value=0.0, step=0.01)
 with col_b:
-    valda_atr = st.number_input("Aktiens ATR-värde:", min_value=0.0, step=0.1)
+    valda_atr = st.number_input("Aktiens ATR-värde:", min_value=0.0, step=0.01)
 
 if kp > 0 and valda_atr > 0:
     stop_loss_pris = kp - (1.5 * valda_atr)
@@ -245,7 +261,8 @@ journal_df = load_journal()
 if not journal_df.empty:
     st.dataframe(journal_df, use_container_width=True)
     if st.button("Rensa journalhistorik 🗑️"):
-        if os.path.exists(JOURNAL_FILE): os.remove(JOURNAL_FILE)
+        if os.path.exists(JOURNAL_FILE): 
+            os.remove(JOURNAL_FILE)
         st.rerun()
 else:
     st.info("Din journal är tom. Logga en affär ovan för att börja samla statistik!")
