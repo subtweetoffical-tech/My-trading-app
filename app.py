@@ -26,7 +26,7 @@ min_omsattning = st.sidebar.number_input("Minsta 5m Omsättning (SEK/USD)", valu
 min_rvol = st.sidebar.slider("Minsta Volymutbrott (RVOL)", 1.0, 3.0, 1.5, 0.1)
 max_pris = st.sidebar.number_input("Max Aktiepris", value=2000, step=100)
 
-# MAPPNING AV AKTIER (Sverige, USA & övriga)
+# MAPPNING AV AKTIER
 NAMN_MAPPNING = {
     # --- Svenska aktier ---
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "ASMDEE-B.ST": "Asmodee (Gaming)",
@@ -64,7 +64,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        # 7 dagars historik är optimalt för 5m-intervall i yfinance utan spärrar
         stort_df = yf.download(alla_tickers_str, period="7d", interval="5m", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
@@ -78,7 +77,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
-                # Korrekt och säker hantering av MultiIndex från yfinance
                 if om_multiindex:
                     if ticker not in stort_df.columns.get_level_values(0):
                         continue
@@ -96,11 +94,10 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(df_ticker['Close'], window=50)
                 df_ticker['ATR'] = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
                 
-                # VWAP Beräkning
-                vwap_ind = ta.volume.VolumeWeightedAveragePrice(
-                    high=df_ticker['High'], low=df_ticker['Low'], close=df_ticker['Close'], volume=df_ticker['Volume'], window=14
-                )
-                df_ticker['VWAP'] = vwap_ind.volume_weighted_average_price()
+                # Korrekt Intraday VWAP (Återställs varje dag)
+                tp = (df_ticker['High'] + df_ticker['Low'] + df_ticker['Close']) / 3
+                df_ticker['VWAP'] = (tp * df_ticker['Volume']).groupby(df_ticker.index.date).cumsum() / \
+                                    df_ticker['Volume'].groupby(df_ticker.index.date).cumsum()
 
                 senaste = df_ticker.iloc[-1]
                 
@@ -133,7 +130,7 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 stop_loss = round(pris - (1.5 * atr_varde), 2)
                 target = round(pris + (2.5 * atr_varde), 2)
 
-                # Spara bearbetad DataFrame för grafer
+                # Spara DataFrame för grafer
                 sparad_df_dict[ticker] = df_ticker
 
                 # --- STRATEGILOGIK ---
@@ -215,7 +212,7 @@ if st.session_state.skannings_resultat:
         )
         
         if val_ticker in st.session_state.sparad_data:
-            chart_df = st.session_state.sparad_data[val_ticker].tail(80)  # Visa de senaste 80 barerna (5m)
+            chart_df = st.session_state.sparad_data[val_ticker].tail(80)
 
             fig = go.Figure()
 
@@ -229,19 +226,19 @@ if st.session_state.skannings_resultat:
                 name="Pris (5m)"
             ))
 
-            # EMA 20 Linje
+            # EMA 20
             fig.add_trace(go.Scatter(
                 x=chart_df.index, y=chart_df['EMA_Snabb'],
                 line=dict(color='orange', width=1.5), name="EMA 20"
             ))
 
-            # EMA 50 Linje
+            # EMA 50
             fig.add_trace(go.Scatter(
                 x=chart_df.index, y=chart_df['EMA_Langsam'],
                 line=dict(color='blue', width=1.5), name="EMA 50"
             ))
 
-            # VWAP Linje
+            # VWAP
             fig.add_trace(go.Scatter(
                 x=chart_df.index, y=chart_df['VWAP'],
                 line=dict(color='purple', width=2, dash='dash'), name="VWAP"
