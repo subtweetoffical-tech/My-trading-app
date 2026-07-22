@@ -4,11 +4,12 @@ import pandas as pd
 import ta
 import numpy as np
 import plotly.graph_objects as go
+from textblob import TextBlob
 
 # --- SIDKONFIGURATION ---
 st.set_page_config(page_title="Högvolatil Scanner Pro", layout="wide")
 
-st.title("⚡ Intraday Scanner Pro med VWAP & Visuella Grafer")
+st.title("⚡ Intraday Scanner Pro med VWAP, Nyhets-AI & Visuella Grafer")
 
 # --- INFORMATIONSFLIK ---
 with st.expander("ℹ️ SÅ HÄR ANVÄNDS DEN FÖRBÄTTRADE STRATEGIN"):
@@ -17,6 +18,7 @@ with st.expander("ℹ️ SÅ HÄR ANVÄNDS DEN FÖRBÄTTRADE STRATEGIN"):
     * **MOMENTUM KÖP 🚀:** Priset ligger ovanför **VWAP**, EMA 20 > EMA 50, volymen (RVOL) har exploderat och RSI är i en hälsosam zon (50–70).
     * **DIPP KÖP 📈:** Översåld aktie ($RSI \le 42$) i en stabil upptrend där priset håller sig över den långsamma trenden.
     * **ÖVERKÖPT / SÄLJ 🔥:** Varning för rekyl nedåt ($RSI \ge 75$).
+    * **Nyhets-AI 📰:** Läser de senaste engelska nyhetsrubrikerna och gör en sentimentanalys (Positivt 🟢 / Negativt 🔴).
     * **Riskhantering:** Varje signal beräknar automatiskt en föreslagen **Stop Loss** (1.5x ATR) och **Target** (2.5x ATR).
     """)
 
@@ -130,6 +132,28 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 stop_loss = round(pris - (1.5 * atr_varde), 2)
                 target = round(pris + (2.5 * atr_varde), 2)
 
+                # --- NYHETSSENTIMENT (AI-TEXTANALYS) ---
+                nyhets_betyg = "Neutralt ⚪"
+                try:
+                    t_obj = yf.Ticker(ticker)
+                    news_item = t_obj.news
+                    if news_item:
+                        rubriker = [
+                            item.get('content', item).get('title', '') 
+                            for item in news_item[:3]
+                        ]
+                        samlad_text = " ".join(rubriker)
+                        
+                        if samlad_text.strip():
+                            analys = TextBlob(samlad_text)
+                            score = analys.sentiment.polarity
+                            if score > 0.08:
+                                nyhets_betyg = "Positivt 🟢"
+                            elif score < -0.08:
+                                nyhets_betyg = "Negativt 🔴"
+                except Exception:
+                    nyhets_betyg = "Ingen data ⚪"
+
                 # Spara DataFrame för grafer
                 sparad_df_dict[ticker] = df_ticker
 
@@ -141,7 +165,8 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                     rekommendation = "MOMENTUM KÖP 🚀"
                     temp_ultra_köp.append({
                         "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
-                        "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Stop Loss": stop_loss, "Target": target
+                        "Nyheter": nyhets_betyg, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", 
+                        "Stop Loss": stop_loss, "Target": target
                     })
                 
                 # Regel 2: Dipp-köp över EMA50
@@ -149,7 +174,8 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                     rekommendation = "DIPP KÖP 📈"
                     temp_rek_köp.append({
                         "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
-                        "RSI": round(rsi, 1), "Stop Loss": stop_loss, "Target": target
+                        "Nyheter": nyhets_betyg, "RSI": round(rsi, 1), 
+                        "Stop Loss": stop_loss, "Target": target
                     })
                 
                 elif rsi >= 75:
@@ -157,8 +183,8 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
 
                 temp_alla.append({
                     "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation,
-                    "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x",
-                    "VWAP": round(vwap_varde, 2), "ATR": round(atr_varde, 2)
+                    "Nyheter": nyhets_betyg, "Senaste 5m %": f"{utveckling_bar:+.2f}%", 
+                    "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "VWAP": round(vwap_varde, 2), "ATR": round(atr_varde, 2)
                 })
             except Exception:
                 continue
@@ -199,9 +225,9 @@ if st.session_state.skannings_resultat:
         df_visa = df_visa.sort_values(by="prio").drop(columns=['prio'])
         st.dataframe(df_visa, use_container_width=True, height=350)
 
-    # --- INTERAKTIV CANDLESTICK-GRAF ---
+    # --- INTERAKTIV CANDLESTICK-GRAF OCH NYHETER ---
     st.write("---")
-    st.subheader("📈 Visuell Grafanalys")
+    st.subheader("📈 Visuell Grafanalys & Nyhetsgranskning")
     
     valda_tickers = list(st.session_state.sparad_data.keys())
     if valda_tickers:
@@ -253,3 +279,21 @@ if st.session_state.skannings_resultat:
             )
 
             st.plotly_chart(fig, use_container_width=True)
+
+            # --- NYHETSFÖRDJUPNING FÖR VALD AKTIE ---
+            st.markdown(f"#### 📰 Senaste rubrikerna för {NAMN_MAPPNING.get(val_ticker, val_ticker)}")
+            try:
+                t_val = yf.Ticker(val_ticker)
+                nyheter_val = t_val.news
+                if nyheter_val:
+                    for artikel in nyheter_val[:4]:
+                        innehall = artikel.get('content', artikel)
+                        titel = innehall.get('title', 'Ingen titel')
+                        lank = innehall.get('canonicalUrl', {}).get('url') or innehall.get('link', '#')
+                        utgivare = innehall.get('provider', {}).get('displayName') or innehall.get('publisher', 'Okänd källa')
+                        
+                        st.markdown(f"🔹 **[{titel}]({lank})** — *{utgivare}*")
+                else:
+                    st.info("Inga färska nyheter hittades för den valda aktien.")
+            except Exception as e:
+                st.warning(f"Kunde inte ladda nyhetslänkar: {e}")
