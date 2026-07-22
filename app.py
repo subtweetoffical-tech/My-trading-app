@@ -83,7 +83,7 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
-                # Hantera MultiIndex korrekt för att undvika dimensionsfel
+                # Korrekt uthämtning oavsett om data har MultiIndex eller enkel indexering
                 if om_multiindex:
                     if ticker not in stort_df.columns.get_level_values(0):
                         continue
@@ -112,10 +112,11 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(close_ser, window=50)
                 df_ticker['ATR'] = ta.volatility.average_true_range(high_ser, low_ser, close_ser, window=14)
                 
-                # Intraday VWAP (Återställs varje dag)
+                # Intraday VWAP med tidszonsåterställning
+                lokalt_index = df_ticker.index.tz_localize(None) if df_ticker.index.tz is not None else df_ticker.index
                 tp = (high_ser + low_ser + close_ser) / 3
-                df_ticker['VWAP'] = (tp * vol_ser).groupby(df_ticker.index.date).cumsum() / \
-                                    vol_ser.groupby(df_ticker.index.date).cumsum()
+                df_ticker['VWAP'] = (tp * vol_ser).groupby(lokalt_index.date).cumsum() / \
+                                    vol_ser.groupby(lokalt_index.date).cumsum()
 
                 senaste = df_ticker.iloc[-1]
                 
@@ -140,8 +141,9 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 if omsattning < min_omsattning: 
                     continue
                     
-                rvol = vol / v_snitt if v_snitt > 0 else 1.0
-                utveckling_bar = ((pris - öppning) / öppning) * 100
+                # Skydd mot noll-division
+                rvol = (vol / v_snitt) if (pd.notna(v_snitt) and v_snitt > 0) else 1.0
+                utveckling_bar = ((pris - öppning) / öppning * 100) if öppning > 0 else 0.0
                 fullt_namn = NAMN_MAPPNING[ticker]
 
                 # Risk/Reward Beräkning
