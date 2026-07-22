@@ -11,6 +11,14 @@ st.set_page_config(page_title="Högvolatil Scanner Pro", layout="wide")
 
 st.title("⚡ Intraday Scanner Pro med VWAP, Nyhets-AI & Visuella Grafer")
 
+# --- CACHAD FUNKTION FÖR NYHETER ---
+@st.cache_data(ttl=900)
+def hamta_nyheter_cachad(ticker_symbol):
+    try:
+        return yf.Ticker(ticker_symbol).news
+    except Exception:
+        return []
+
 # --- INFORMATIONSFLIK ---
 with st.expander("ℹ️ SÅ HÄR ANVÄNDS DEN FÖRBÄTTRADE STRATEGIN"):
     st.markdown("""
@@ -59,7 +67,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
     status_text = st.empty()
     progress_bar = st.progress(0)
     
-    # Rensa gamla resultat
     st.session_state.skannings_resultat = None
     st.session_state.sparad_data = {}
 
@@ -83,7 +90,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
-                # Korrekt uthämtning oavsett om data har MultiIndex eller enkel indexering
                 if om_multiindex:
                     if ticker not in stort_df.columns.get_level_values(0):
                         continue
@@ -98,22 +104,26 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 if len(df_ticker) < 50: 
                     continue
                 
-                # Extrahera 1D Series för att förhindra krascher i 'ta'-biblioteket
                 close_ser = df_ticker['Close'].squeeze()
                 high_ser = df_ticker['High'].squeeze()
                 low_ser = df_ticker['Low'].squeeze()
                 open_ser = df_ticker['Open'].squeeze()
                 vol_ser = df_ticker['Volume'].squeeze()
 
-                # --- BERÄKNING AV TEKNISKA INDIKATORER ---
+                # --- TEKNISKA INDIKATORER ---
                 df_ticker['RSI'] = ta.momentum.rsi(close_ser, window=14)
                 df_ticker['Vol_Snitt'] = vol_ser.rolling(window=20).mean()
                 df_ticker['EMA_Snabb'] = ta.trend.ema_indicator(close_ser, window=20)
                 df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(close_ser, window=50)
                 df_ticker['ATR'] = ta.volatility.average_true_range(high_ser, low_ser, close_ser, window=14)
                 
-                # Intraday VWAP med tidszonsåterställning
-                lokalt_index = df_ticker.index.tz_localize(None) if df_ticker.index.tz is not None else df_ticker.index
+                # SÄKER VWAP-BERÄKNING PER HANDELSDAG
+                tz_namn = "Europe/Stockholm" if ticker.endswith(".ST") else "America/New_York"
+                if getattr(df_ticker.index, 'tz', None) is not None:
+                    lokalt_index = df_ticker.index.tz_convert(tz_namn)
+                else:
+                    lokalt_index = df_ticker.index.tz_localize("UTC").tz_convert(tz_namn)
+
                 tp = (high_ser + low_ser + close_ser) / 3
                 df_ticker['VWAP'] = (tp * vol_ser).groupby(lokalt_index.date).cumsum() / \
                                     vol_ser.groupby(lokalt_index.date).cumsum()
@@ -130,33 +140,28 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 atr_varde = float(senaste['ATR'])
                 vwap_varde = float(senaste['VWAP'])
 
-                if pd.isna(rsi) or pd.isna(ema_snabb) or pd.isna(vwap_varde):
+                if pd.isna(rsi) or pd.isna(ema_snabb) or pd.isna(vwap_varde) or np.isinf(vwap_varde):
                     continue
 
                 if pris > max_pris or pris <= 0: 
                     continue
                 
-                # Omsättningsfilter
                 omsattning = pris * vol
                 if omsattning < min_omsattning: 
                     continue
                     
-                # Skydd mot noll-division
                 rvol = (vol / v_snitt) if (pd.notna(v_snitt) and v_snitt > 0) else 1.0
                 utveckling_bar = ((pris - öppning) / öppning * 100) if öppning > 0 else 0.0
                 fullt_namn = NAMN_MAPPNING[ticker]
 
-                # Risk/Reward Beräkning
                 stop_loss = round(pris - (1.5 * atr_varde), 2)
                 target = round(pris + (2.5 * atr_varde), 2)
 
-                # Spara DataFrame för grafer
                 sparad_df_dict[ticker] = df_ticker
 
                 # --- STRATEGILOGIK ---
                 rekommendation = "Avvakta 🟡"
                 
-                # Regel 1: VWAP + EMA + RVOL Momentum
                 if pris > vwap_varde and pris > ema_snabb and ema_snabb > ema_langsam and rvol >= min_rvol and (50 <= rsi <= 70):
                     rekommendation = "MOMENTUM KÖP 🚀"
                     temp_ultra_köp.append({
@@ -165,7 +170,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                         "Stop Loss": stop_loss, "Target": target
                     })
                 
-                # Regel 2: Dipp-köp över EMA50
                 elif ema_snabb > ema_langsam and rsi <= 42 and pris > ema_langsam:
                     rekommendation = "DIPP KÖP 📈"
                     temp_rek_köp.append({
@@ -217,7 +221,7 @@ if st.session_state.skannings_resultat:
     if res["alla"]:
         df_visa = pd.DataFrame(res["alla"])
         sortering = {"MOMENTUM KÖP 🚀": 0, "DIPP KÖP 📈": 1, "Avvakta 🟡": 2, "ÖVERKÖPT / SÄLJ 🔥": 3}
-        df_visa['prio'] = df_visa['Rekommendation'].map(sortering)
+        df_visa['prio'] = df_visa['Rekommendation'].map(sortering).fillna(99)
         df_visa = df_visa.sort_values(by="prio").drop(columns=['prio'])
         st.dataframe(df_visa, use_container_width=True, height=350)
 
@@ -238,31 +242,27 @@ if st.session_state.skannings_resultat:
 
             fig = go.Figure()
 
-            # Candlesticks
             fig.add_trace(go.Candlestick(
                 x=chart_df.index,
-                open=chart_df['Open'],
-                high=chart_df['High'],
-                low=chart_df['Low'],
-                close=chart_df['Close'],
+                open=chart_df['Open'].squeeze(),
+                high=chart_df['High'].squeeze(),
+                low=chart_df['Low'].squeeze(),
+                close=chart_df['Close'].squeeze(),
                 name="Pris (5m)"
             ))
 
-            # EMA 20
             fig.add_trace(go.Scatter(
-                x=chart_df.index, y=chart_df['EMA_Snabb'],
+                x=chart_df.index, y=chart_df['EMA_Snabb'].squeeze(),
                 line=dict(color='orange', width=1.5), name="EMA 20"
             ))
 
-            # EMA 50
             fig.add_trace(go.Scatter(
-                x=chart_df.index, y=chart_df['EMA_Langsam'],
+                x=chart_df.index, y=chart_df['EMA_Langsam'].squeeze(),
                 line=dict(color='blue', width=1.5), name="EMA 50"
             ))
 
-            # VWAP
             fig.add_trace(go.Scatter(
-                x=chart_df.index, y=chart_df['VWAP'],
+                x=chart_df.index, y=chart_df['VWAP'].squeeze(),
                 line=dict(color='purple', width=2, dash='dash'), name="VWAP"
             ))
 
@@ -276,20 +276,25 @@ if st.session_state.skannings_resultat:
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- NYHETSFÖRDJUPNING FÖR VALD AKTIE ---
+            # --- NYHETSFÖRDJUPNING ---
             st.markdown(f"#### 📰 Senaste rubrikerna & AI-sentiment för {NAMN_MAPPNING.get(val_ticker, val_ticker)}")
             try:
-                t_val = yf.Ticker(val_ticker)
-                nyheter_val = t_val.news
+                nyheter_val = hamta_nyheter_cachad(val_ticker)
                 if nyheter_val:
                     for artikel in nyheter_val[:4]:
-                        innehall = artikel.get('content', artikel)
-                        titel = innehall.get('title', 'Ingen titel')
-                        lank = innehall.get('canonicalUrl', {}).get('url') or innehall.get('link', '#')
-                        utgivare = innehall.get('provider', {}).get('displayName') or innehall.get('publisher', 'Okänd källa')
+                        innehall = artikel.get('content', artikel) if isinstance(artikel, dict) else {}
+                        if not isinstance(innehall, dict):
+                            innehall = {}
+
+                        titel = innehall.get('title') or 'Ingen titel'
                         
-                        # Sentiment på enskild nyhet
-                        analys = TextBlob(titel)
+                        canonical = innehall.get('canonicalUrl') if isinstance(innehall.get('canonicalUrl'), dict) else {}
+                        lank = canonical.get('url') or innehall.get('link') or '#'
+                        
+                        provider = innehall.get('provider') if isinstance(innehall.get('provider'), dict) else {}
+                        utgivare = provider.get('displayName') or innehall.get('publisher') or 'Okänd källa'
+                        
+                        analys = TextBlob(str(titel))
                         score = analys.sentiment.polarity
                         emoji = "🟢" if score > 0.05 else ("🔴" if score < -0.05 else "⚪")
                         
