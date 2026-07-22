@@ -16,8 +16,8 @@ with st.expander("ℹ️ SÅ HÄR ANVÄNDS DEN FÖRBÄTTRADE STRATEGIN"):
     st.markdown("""
     ### 🎯 Träffsäkra Intraday-signaler & Beslutsstöd:
     * **MOMENTUM KÖP 🚀:** Priset ligger ovanför **VWAP**, EMA 20 > EMA 50, volymen (RVOL) har exploderat och RSI är i en hälsosam zon (50–70).
-    * **DIPP KÖP 📈:** Översåld aktie ($RSI \le 42$) i en stabil upptrend där priset håller sig över den långsamma trenden.
-    * **ÖVERKÖPT / SÄLJ 🔥:** Varning för rekyl nedåt ($RSI \ge 75$).
+    * **DIPP KÖP 📈:** Översåld aktie (RSI ≤ 42) i en stabil upptrend där priset håller sig över den långsamma trenden.
+    * **ÖVERKÖPT / SÄLJ 🔥:** Varning för rekyl nedåt (RSI ≥ 75).
     * **Nyhets-AI 📰:** Läser de senaste engelska nyhetsrubrikerna och gör en sentimentanalys (Positivt 🟢 / Negativt 🔴).
     * **Riskhantering:** Varje signal beräknar automatiskt en föreslagen **Stop Loss** (1.5x ATR) och **Target** (2.5x ATR).
     """)
@@ -59,6 +59,10 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
     status_text = st.empty()
     progress_bar = st.progress(0)
     
+    # Rensa gamla resultat
+    st.session_state.skannings_resultat = None
+    st.session_state.sparad_data = {}
+
     temp_ultra_köp = []
     temp_rek_köp = []
     temp_alla = []
@@ -79,27 +83,39 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
             progress_bar.progress((i + 1) / len(AKTIER))
             
             try:
+                # Hantera MultiIndex korrekt för att undvika dimensionsfel
                 if om_multiindex:
                     if ticker not in stort_df.columns.get_level_values(0):
                         continue
-                    df_ticker = stort_df[ticker].dropna(subset=['Close']).copy()
+                    df_ticker = stort_df[ticker].copy()
+                    if isinstance(df_ticker.columns, pd.MultiIndex):
+                        df_ticker.columns = df_ticker.columns.get_level_values(0)
                 else:
-                    df_ticker = stort_df.dropna(subset=['Close']).copy()
+                    df_ticker = stort_df.copy()
+
+                df_ticker = df_ticker.dropna(subset=['Close'])
                 
                 if len(df_ticker) < 50: 
                     continue
                 
+                # Extrahera 1D Series för att förhindra krascher i 'ta'-biblioteket
+                close_ser = df_ticker['Close'].squeeze()
+                high_ser = df_ticker['High'].squeeze()
+                low_ser = df_ticker['Low'].squeeze()
+                open_ser = df_ticker['Open'].squeeze()
+                vol_ser = df_ticker['Volume'].squeeze()
+
                 # --- BERÄKNING AV TEKNISKA INDIKATORER ---
-                df_ticker['RSI'] = ta.momentum.rsi(df_ticker['Close'], window=14)
-                df_ticker['Vol_Snitt'] = df_ticker['Volume'].rolling(window=20).mean()
-                df_ticker['EMA_Snabb'] = ta.trend.ema_indicator(df_ticker['Close'], window=20)
-                df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(df_ticker['Close'], window=50)
-                df_ticker['ATR'] = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
+                df_ticker['RSI'] = ta.momentum.rsi(close_ser, window=14)
+                df_ticker['Vol_Snitt'] = vol_ser.rolling(window=20).mean()
+                df_ticker['EMA_Snabb'] = ta.trend.ema_indicator(close_ser, window=20)
+                df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(close_ser, window=50)
+                df_ticker['ATR'] = ta.volatility.average_true_range(high_ser, low_ser, close_ser, window=14)
                 
-                # Korrekt Intraday VWAP (Återställs varje dag)
-                tp = (df_ticker['High'] + df_ticker['Low'] + df_ticker['Close']) / 3
-                df_ticker['VWAP'] = (tp * df_ticker['Volume']).groupby(df_ticker.index.date).cumsum() / \
-                                    df_ticker['Volume'].groupby(df_ticker.index.date).cumsum()
+                # Intraday VWAP (Återställs varje dag)
+                tp = (high_ser + low_ser + close_ser) / 3
+                df_ticker['VWAP'] = (tp * vol_ser).groupby(df_ticker.index.date).cumsum() / \
+                                    vol_ser.groupby(df_ticker.index.date).cumsum()
 
                 senaste = df_ticker.iloc[-1]
                 
@@ -132,28 +148,6 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                 stop_loss = round(pris - (1.5 * atr_varde), 2)
                 target = round(pris + (2.5 * atr_varde), 2)
 
-                # --- NYHETSSENTIMENT (AI-TEXTANALYS) ---
-                nyhets_betyg = "Neutralt ⚪"
-                try:
-                    t_obj = yf.Ticker(ticker)
-                    news_item = t_obj.news
-                    if news_item:
-                        rubriker = [
-                            item.get('content', item).get('title', '') 
-                            for item in news_item[:3]
-                        ]
-                        samlad_text = " ".join(rubriker)
-                        
-                        if samlad_text.strip():
-                            analys = TextBlob(samlad_text)
-                            score = analys.sentiment.polarity
-                            if score > 0.08:
-                                nyhets_betyg = "Positivt 🟢"
-                            elif score < -0.08:
-                                nyhets_betyg = "Negativt 🔴"
-                except Exception:
-                    nyhets_betyg = "Ingen data ⚪"
-
                 # Spara DataFrame för grafer
                 sparad_df_dict[ticker] = df_ticker
 
@@ -165,7 +159,7 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                     rekommendation = "MOMENTUM KÖP 🚀"
                     temp_ultra_köp.append({
                         "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
-                        "Nyheter": nyhets_betyg, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", 
+                        "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", 
                         "Stop Loss": stop_loss, "Target": target
                     })
                 
@@ -174,7 +168,7 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
                     rekommendation = "DIPP KÖP 📈"
                     temp_rek_köp.append({
                         "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
-                        "Nyheter": nyhets_betyg, "RSI": round(rsi, 1), 
+                        "RSI": round(rsi, 1), 
                         "Stop Loss": stop_loss, "Target": target
                     })
                 
@@ -183,7 +177,7 @@ if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
 
                 temp_alla.append({
                     "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation,
-                    "Nyheter": nyhets_betyg, "Senaste 5m %": f"{utveckling_bar:+.2f}%", 
+                    "Senaste 5m %": f"{utveckling_bar:+.2f}%", 
                     "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "VWAP": round(vwap_varde, 2), "ATR": round(atr_varde, 2)
                 })
             except Exception:
@@ -281,7 +275,7 @@ if st.session_state.skannings_resultat:
             st.plotly_chart(fig, use_container_width=True)
 
             # --- NYHETSFÖRDJUPNING FÖR VALD AKTIE ---
-            st.markdown(f"#### 📰 Senaste rubrikerna för {NAMN_MAPPNING.get(val_ticker, val_ticker)}")
+            st.markdown(f"#### 📰 Senaste rubrikerna & AI-sentiment för {NAMN_MAPPNING.get(val_ticker, val_ticker)}")
             try:
                 t_val = yf.Ticker(val_ticker)
                 nyheter_val = t_val.news
@@ -292,7 +286,12 @@ if st.session_state.skannings_resultat:
                         lank = innehall.get('canonicalUrl', {}).get('url') or innehall.get('link', '#')
                         utgivare = innehall.get('provider', {}).get('displayName') or innehall.get('publisher', 'Okänd källa')
                         
-                        st.markdown(f"🔹 **[{titel}]({lank})** — *{utgivare}*")
+                        # Sentiment på enskild nyhet
+                        analys = TextBlob(titel)
+                        score = analys.sentiment.polarity
+                        emoji = "🟢" if score > 0.05 else ("🔴" if score < -0.05 else "⚪")
+                        
+                        st.markdown(f"{emoji} **[{titel}]({lank})** — *{utgivare}*")
                 else:
                     st.info("Inga färska nyheter hittades för den valda aktien.")
             except Exception as e:
