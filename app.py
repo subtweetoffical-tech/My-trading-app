@@ -3,237 +3,256 @@ import yfinance as yf
 import pandas as pd
 import ta
 import numpy as np
+import plotly.graph_objects as go
 
-# Sätt sidkonfiguration
-st.set_page_config(page_title="Högvolatil Scanner Pro", layout="centered")
+# --- SIDKONFIGURATION ---
+st.set_page_config(page_title="Högvolatil Scanner Pro", layout="wide")
 
-st.title("⚡ Intraday Scanner med Visuellt Beslutsstöd")
+st.title("⚡ Intraday Scanner Pro med VWAP & Visuella Grafer")
 
 # --- INFORMATIONSFLIK ---
-with st.expander("ℹ️ SÅ HÄR LÄSER DU DE VISUELLA SIGNALERNA"):
+with st.expander("ℹ️ SÅ HÄR ANVÄNDS DEN FÖRBÄTTRADE STRATEGIN"):
     st.markdown("""
-    ### Beslutsstöd för din Intraday-handel (5m):
-    * **MOMENTUM KÖP 🚀** – *Köpstyrka!* Priset stiger, kort trend är upp (EMA 20 > EMA 50) och volymen har exploderat till minst 1.5x det normala.
-    * **DIPP KÖP 📈** – *Rea i trenden!* Aktien är i grunden stark, men har tagit en tillfällig paus och blivit kortsiktigt översåld ($RSI \le 40$).
-    * **ÖVERKÖPT / SÄLJ 🔥** – *Varning/Vinsthemtagning!* Aktien har rusat alldeles för snabbt ($RSI \ge 75$). Risk för direkt rekyl nedåt. Köp inte här.
-    * **Avvakta 🟡** – Inget tydligt mönster eller för låg aktivitet just nu.
+    ### 🎯 Träffsäkra Intraday-signaler & Beslutsstöd:
+    * **MOMENTUM KÖP 🚀:** Priset ligger ovanför **VWAP**, EMA 20 > EMA 50, volymen (RVOL) har exploderat och RSI är i en hälsosam zon (50–70).
+    * **DIPP KÖP 📈:** Översåld aktie ($RSI \le 42$) i en stabil upptrend där priset håller sig över den långsamma trenden.
+    * **ÖVERKÖPT / SÄLJ 🔥:** Varning för rekyl nedåt ($RSI \ge 75$).
+    * **Riskhantering:** Varje signal beräknar automatiskt en föreslagen **Stop Loss** (1.5x ATR) och **Target** (2.5x ATR).
     """)
 
-# Totalt 200 noga utvalda högvolatila och likvida aktier tillgängliga på Avanza
+# --- SIDEBAR: INTERAKTIVA FILTER ---
+st.sidebar.header("⚙️ Inställningar & Filter")
+min_omsattning = st.sidebar.number_input("Minsta 5m Omsättning (SEK/USD)", value=10000, step=5000)
+min_rvol = st.sidebar.slider("Minsta Volymutbrott (RVOL)", 1.0, 3.0, 1.5, 0.1)
+max_pris = st.sidebar.number_input("Max Aktiepris", value=2000, step=100)
+
+# MAPPNING AV AKTIER (Sverige, USA & övriga)
 NAMN_MAPPNING = {
-    # --- Ursprungliga svenska aktier (123 st) ---
+    # --- Svenska aktier ---
     "SINCH.ST": "Sinch (Tech)", "EMBRAC-B.ST": "Embracer (Gaming)", "ASMDEE-B.ST": "Asmodee (Gaming)",
     "SIVERS.ST": "Sivers Semiconductors", "FORTV.ST": "Fortnox (Mjukvara)", "EVO.ST": "Evolution (iGaming)", 
     "BETCO.ST": "Betsson (Gaming)", "G5EN.ST": "G5 Entertainment", "MTG-B.ST": "MTG (Gaming)", 
     "BOOZT.ST": "Boozt (E-handel)", "BHG.ST": "BHG Group (E-handel)", "HPOL-B.ST": "Hexatronic (Fiber)", 
     "MYCR.ST": "Mycronic (Tech)", "SBB-B.ST": "SBB B (Fastigheter)", "CORE-B.ST": "Corem B (Fastigheter)", 
-    "BICO.ST": "BICO Group (Biotech)", "FING-B.ST": "Fingerprint Cards", "PCELL.ST": "PowerCell (Vätgas)", 
-    "VITR.ST": "Vitrolife (Biotech)", "BIOT.ST": "Biotage (Biotech)", "SRECO.ST": "SOBI (Biotech)", 
-    "ADDV.ST": "AddLife (Medtech)", "CANT.ST": "Cantargia (Biotech)", "CAMX.ST": "Camurus (Biotech)",
-    "AMBEV.ST": "Ambea", "ATT.ST": "Attendo", "HUM.ST": "Humana", "XBRANE.ST": "Xbrane Biopharma", 
-    "BIOV-B.ST": "BioInvent", "STVK.ST": "Sedana Medical", "MVIC.ST": "Moberg Pharma",
-    "BOL.ST": "Boliden (Gruvor)", "SSAB-B.ST": "SSAB B (Stål)", "ORR.ST": "Orron Energy", 
-    "AOI.ST": "Africa Oil (Olja)", "SCA-B.ST": "SCA B (Skog)", "STE-R.ST": "Stora Enso", 
-    "SKF-B.ST": "SKF B", "SAND.ST": "Sandvik", "VOLV-B.ST": "Volvo B", "SAAB-B.ST": "Saab B (Försvar)", 
-    "NIBE-B.ST": "Nibe (Grön Energi)", "DOM.ST": "Dometic", "HEXA-B.ST": "Hexagon", "AFRY.ST": "AFRY", 
-    "JM.ST": "JM (Bygg)", "PEAB-B.ST": "Peab", "NCC-B.ST": "NCC B", "MUNTE.ST": "Munters Group", 
-    "BEGR.ST": "Beijer Alma", "BELE.ST": "Beijer Ref", "BUFAB.ST": "Bufab", "MEKO.ST": "Mekonomen", 
-    "SYSTEM.ST": "Systemair", "MALMK.ST": "Gränges", "BEGroup.ST": "BE Group", "NOLA-B.ST": "Nolato B",
-    "INVE-B.ST": "Investor B", "KINV-B.ST": "Kinnevik B", "LATO-B.ST": "Latour B", "RATO-B.ST": "Ratos B",
-    "CREA-B.ST": "Creades B", "BURE.ST": "Bure Equity", "SVOL-B.ST": "Svolder B", "TRAC-B.ST": "Traction B", 
-    "AVAN.ST": "Avanza", "NORD.ST": "Nordnet", "TF_BANK.ST": "TF Bank", "DIOS.ST": "Diös Fastigheter", 
-    "HEBA-B.ST": "Heba B", "PLAT-B.ST": "Platzer", "CAT-B.ST": "Catena", "TRIAN-B.ST": "Trianon B", 
-    "PNDX-B.ST": "Pandox", "SLP-B.ST": "Swedish Logistic Properties", "EAST.ST": "Eastnine", 
-    "KFAST-B.ST": "K-Fastigheter", "LOGIST.ST": "Logistea", "FABG.ST": "Fabege", "WIHL.ST": "Wihlborgs", 
-    "WALL-B.ST": "Wallenstam", "NYF.ST": "Nyfosa", "CAST.ST": "Castellum", "BALD-B.ST": "Balder",
-    "KNOW.ST": "Knowit", "B3.ST": "B3 Consulting", "ITS.ST": "I.A.R Systems", "FORX.ST": "Formpipe Software",
-    "ADD-B.ST": "AddNode Group", "TIETO.ST": "Tietoevry", "HMS.ST": "HMS Networks", "PREV.ST": "Prevas B", 
-    "SOFT-B.ST": "Softronic", "EXP-B.ST": "Exsitec", "CINT.ST": "Cint Group", "TIGO-SDB.ST": "Millicom SDB",
-    "TELE2-B.ST": "Tele2", "TELIA.ST": "Telia Company", "ERIC-B.ST": "Ericsson B", "STU-B.ST": "Starbreeze B", 
-    "MAG.ST": "Mag Interactive", "LYKO.ST": "Lyko Group", "NELLY.ST": "Nelly Group", "CDON.ST": "CDON", 
-    "QNLI.ST": "Qliro", "SPLAY.ST": "Storytel", "READ.ST": "Readly International", "CATE.ST": "Catena Media", 
-    "ANGI.ST": "Angler Gaming", "KRE.ST": "Kambi Group", "RAK.ST": "Raketech", "HM-B.ST": "H&M B", 
-    "BILI.ST": "Bilia", "DUST.ST": "Dustin Group", "ALIV-SDB.ST": "Autoliv SDB", "RVRC.ST": "RevolutionRace", 
-    "ELUX-B.ST": "Electrolux", "MIPS.ST": "MIPS", "RUG.ST": "RugVista", "CLAS-B.ST": "Clas Ohlson", 
-    "NEWW-B.ST": "New Wave Group", "ITAB.ST": "ITAB Shop Concept", "CLIME.ST": "Climeon", "MINESTO.ST": "Minesto", 
-    "NIL-B.ST": "Nilörngruppen", "METV.ST": "Metacon", "ECCO.ST": "Eolus Vind", "ARISE.ST": "Arise", 
-    "CIBUS.ST": "Cibus Nordic Real Estate", "TEQN.ST": "Teqnion", "PROF-B.ST": "Profoto B", 
-    "NORD-B.ST": "Nordic Waterproofing", "FERRO.ST": "Ferroamp", "GARO.ST": "Garo", "EPIW-B.ST": "Epiroc B", 
-    "LIFCO-B.ST": "Lifco B", "INDT.ST": "Indutrade", "VIK-B.ST": "Viking Supply", "BALCO.ST": "Balco Group", 
-    "BOULE.ST": "Boule Diagnostics", "SBB-D.ST": "SBB D",
+    "BOL.ST": "Boliden (Gruvor)", "SSAB-B.ST": "SSAB B (Stål)", "VOLV-B.ST": "Volvo B", "SAAB-B.ST": "Saab B (Försvar)", 
+    "NIBE-B.ST": "Nibe (Grön Energi)", "INVE-B.ST": "Investor B", "AVAN.ST": "Avanza", "HM-B.ST": "H&M B",
 
-    # --- USA: Tech & Growth (21 st) ---
-    "AAPL": "Apple (Tech)", "MSFT": "Microsoft (Tech)", "NVDA": "NVIDIA (AI/Semiconductors)",
+    # --- USA: Tech & Growth ---
+    "AAPL": "Apple (Tech)", "MSFT": "Microsoft (Tech)", "NVDA": "NVIDIA (AI)",
     "AMD": "AMD (Semiconductors)", "TSLA": "Tesla (Elbilar)", "AMZN": "Amazon (E-handel)",
-    "META": "Meta Platforms (Tech)", "GOOGL": "Alphabet (Tech)", "NFLX": "Netflix (Streaming)",
-    "PLTR": "Palantir (AI/Mjukvara)", "COIN": "Coinbase (Krypto)", "MARA": "Marathon Digital (Krypto/Mining)",
-    "RIOT": "Riot Platforms (Krypto/Mining)", "HOOD": "Robinhood (Fintech)", "SOFI": "SoFi Technologies (Fintech)",
-    "U": "Unity Software (Gaming)", "TTD": "The Trade Desk (Adtech)", "NET": "Cloudflare (Tech)",
-    "CRWD": "CrowdStrike (Cybersäkerhet)", "PLUG": "Plug Power (Vätgas)", "FCEL": "FuelCell Energy (Vätgas)",
-
-    # --- Danmark (8 st) ---
-    "NOVO-B.CO": "Novo Nordisk (Medicin)", "DSV.CO": "DSV (Logistik)", "VESTAS.CO": "Vestas Wind (Grön Energi)",
-    "ORSTED.CO": "Ørsted (Grön Energi)", "ZEAL.CO": "Zealand Pharma (Biotech)", "BAVA.CO": "Bavarian Nordic (Biotech)",
-    "MAERSK-B.CO": "A.P. Møller - Mærsk", "CARL-B.CO": "Carlsberg B",
-    
-    # --- Finland (6 st) ---
-    "NESTE.HE": "Neste (Förnybar olja)", "NOKIA.HE": "Nokia (Telekom)", "WAR1V.HE": "Wärtsilä (Energi/Marin)",
-    "OUT1V.HE": "Outokumpu (Stål)", "METSO.HE": "Metso (Industri)", "VALMT.HE": "Valmet (Industri)",
-
-    # --- Svenska tillägg (11 st) ---
-    "ALFA.ST": "Alfa Laval", "ELUX-A.ST": "Electrolux A", "GETI-B.ST": "Getinge",
-    "LUMI.ST": "Lundin Mining", "NCC-A.ST": "NCC A", "SKAG.ST": "Skanska B", 
-    "TEL2-A.ST": "Tele2 A", "TREL-B.ST": "Trelleborg", "NOTE.ST": "Note (Tech)", 
-    "CTEK.ST": "CTEK (Laddare)", "OX2.ST": "OX2 (Grön Energi)",
-
-    # --- Globala Volatila Sektorer: Uran, Krypto & Cannabis (11 st) ---
-    "CCJ": "Cameco (Uran)", "UUUU": "Energy Fuels (Uran)", "URA": "Uranium ETF",
-    "CLEAN": "CleanSpark (Bitcoin Mining)", "HUT": "Hut 8 Mining", "MSTR": "MicroStrategy (Bitcoin-ägare)",
-    "TLRY": "Tilray Brands (Cannabis)", "CGC": "Canopy Growth (Cannabis)", "ROKU": "Roku (Streaming)",
-    "DKNG": "DraftKings (Betting)", "PATH": "UiPath (AI/Automation)"
+    "META": "Meta (Tech)", "GOOGL": "Alphabet (Tech)", "PLTR": "Palantir (AI)", 
+    "COIN": "Coinbase (Krypto)", "MARA": "Marathon Digital (Krypto)", "MSTR": "MicroStrategy (Bitcoin)"
 }
 
 AKTIER = list(NAMN_MAPPNING.keys())
 
 # Initiera session state
-if "ultra_köp" not in st.session_state: st.session_state.ultra_köp = []
-if "rek_köp" not in st.session_state: st.session_state.rek_köp = []
-if "alla_aktier" not in st.session_state: st.session_state.alla_aktier = []
-if "har_skannat" not in st.session_state: st.session_state.har_skannat = False
+if "skannings_resultat" not in st.session_state:
+    st.session_state.skannings_resultat = None
+if "sparad_data" not in st.session_state:
+    st.session_state.sparad_data = {}
 
-MAX_AKTIEPRIS = 2000.0
-
-if st.button("STARTA ULTRA-MOMENTUMSÖKNING (5M INTERVALL) ⚡", use_container_width=True):
+# --- SKANNINGSKNAPP ---
+if st.button("STARTA SCANNER (5M INTERVALL) ⚡", use_container_width=True):
     status_text = st.empty()
     progress_bar = st.progress(0)
     
     temp_ultra_köp = []
     temp_rek_köp = []
     temp_alla = []
+    sparad_df_dict = {}
     
     alla_tickers_str = " ".join(AKTIER)
     try:
-        stort_df = yf.download(alla_tickers_str, period="60d", interval="5m", progress=False, group_by="ticker")
+        # 7 dagars historik är optimalt för 5m-intervall i yfinance utan spärrar
+        stort_df = yf.download(alla_tickers_str, period="7d", interval="5m", progress=False, group_by="ticker")
     except Exception as e:
         st.error(f"Kunde inte hämta data från Yahoo Finance: {e}")
         stort_df = pd.DataFrame()
 
     if not stort_df.empty:
-        if isinstance(stort_df.columns, pd.MultiIndex):
-            tillgangliga_tickers = stort_df.columns.levels[0]
-        else:
-            tillgangliga_tickers = []
+        om_multiindex = isinstance(stort_df.columns, pd.MultiIndex)
 
         for i, ticker in enumerate(AKTIER):
             status_text.write(f"Skannar ({i+1}/{len(AKTIER)}): {NAMN_MAPPNING[ticker]}...")
             progress_bar.progress((i + 1) / len(AKTIER))
             
-            if ticker not in tillgangliga_tickers:
-                continue
-                
             try:
-                if isinstance(stort_df.columns, pd.MultiIndex):
-                    if ticker not in stort_df.columns.levels[0]:
+                # Korrekt och säker hantering av MultiIndex från yfinance
+                if om_multiindex:
+                    if ticker not in stort_df.columns.get_level_values(0):
                         continue
+                    df_ticker = stort_df[ticker].dropna(subset=['Close']).copy()
                 else:
-                    if ticker not in stort_df.columns:
-                        continue
-                        
-                df_ticker = stort_df[ticker].copy().dropna(subset=['Close'])
+                    df_ticker = stort_df.dropna(subset=['Close']).copy()
+                
                 if len(df_ticker) < 50: 
                     continue
                 
-                # Tekniska indikatorer för 5m-grafen
-                df_rsi = ta.momentum.rsi(df_ticker['Close'], window=14)
-                df_vol_snitt = df_ticker['Volume'].rolling(window=20).mean()
-                df_ema_snabb = ta.trend.ema_indicator(df_ticker['Close'], window=20)
-                df_ema_langsam = ta.trend.ema_indicator(df_ticker['Close'], window=50)
-                df_atr = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
+                # --- BERÄKNING AV TEKNISKA INDIKATORER ---
+                df_ticker['RSI'] = ta.momentum.rsi(df_ticker['Close'], window=14)
+                df_ticker['Vol_Snitt'] = df_ticker['Volume'].rolling(window=20).mean()
+                df_ticker['EMA_Snabb'] = ta.trend.ema_indicator(df_ticker['Close'], window=20)
+                df_ticker['EMA_Langsam'] = ta.trend.ema_indicator(df_ticker['Close'], window=50)
+                df_ticker['ATR'] = ta.volatility.average_true_range(df_ticker['High'], df_ticker['Low'], df_ticker['Close'], window=14)
                 
-                if df_rsi.empty or df_ema_snabb.empty or df_ema_langsam.empty: 
-                    continue
-                if pd.isna(df_rsi.iloc[-1]) or pd.isna(df_ema_snabb.iloc[-1]) or pd.isna(df_ema_langsam.iloc[-1]): 
+                # VWAP Beräkning
+                vwap_ind = ta.volume.VolumeWeightedAveragePrice(
+                    high=df_ticker['High'], low=df_ticker['Low'], close=df_ticker['Close'], volume=df_ticker['Volume'], window=14
+                )
+                df_ticker['VWAP'] = vwap_ind.volume_weighted_average_price()
+
+                senaste = df_ticker.iloc[-1]
+                
+                pris = float(senaste['Close'])
+                vol = float(senaste['Volume'])
+                öppning = float(senaste['Open'])
+                rsi = float(senaste['RSI'])
+                v_snitt = float(senaste['Vol_Snitt'])
+                ema_snabb = float(senaste['EMA_Snabb'])
+                ema_langsam = float(senaste['EMA_Langsam'])
+                atr_varde = float(senaste['ATR'])
+                vwap_varde = float(senaste['VWAP'])
+
+                if pd.isna(rsi) or pd.isna(ema_snabb) or pd.isna(vwap_varde):
                     continue
 
-                pris = float(df_ticker['Close'].iloc[-1])
-                vol = float(df_ticker['Volume'].iloc[-1])
-                öppning = float(df_ticker['Open'].iloc[-1])
-                
-                rsi = float(df_rsi.iloc[-1])
-                v_snitt = float(df_vol_snitt.iloc[-1])
-                ema_snabb = float(df_ema_snabb.iloc[-1])
-                ema_langsam = float(df_ema_langsam.iloc[-1])
-                atr_varde = float(df_atr.iloc[-1])
-                
-                if pris > MAX_AKTIEPRIS or pris <= 0 or np.isnan(pris): 
+                if pris > max_pris or pris <= 0: 
                     continue
                 
-                # Filtrera bort extremt illikvida bars (Omsättning under 5000 kr under 5 minuter)
-                if (pris * vol) < 5000: 
+                # Omsättningsfilter
+                omsattning = pris * vol
+                if omsattning < min_omsattning: 
                     continue
                     
                 rvol = vol / v_snitt if v_snitt > 0 else 1.0
                 utveckling_bar = ((pris - öppning) / öppning) * 100
                 fullt_namn = NAMN_MAPPNING[ticker]
 
-                # --- VISUELL STRATEGILOGIK (BESLUTSSTÖD) ---
+                # Risk/Reward Beräkning
+                stop_loss = round(pris - (1.5 * atr_varde), 2)
+                target = round(pris + (2.5 * atr_varde), 2)
+
+                # Spara bearbetad DataFrame för grafer
+                sparad_df_dict[ticker] = df_ticker
+
+                # --- STRATEGILOGIK ---
                 rekommendation = "Avvakta 🟡"
                 
-                # Regel 1: Volym- och trendutbrott (Köp momentum)
-                if pris > ema_snabb and ema_snabb > ema_langsam and rvol >= 1.5 and (50 < rsi < 70):
+                # Regel 1: VWAP + EMA + RVOL Momentum
+                if pris > vwap_varde and pris > ema_snabb and ema_snabb > ema_langsam and rvol >= min_rvol and (50 <= rsi <= 70):
                     rekommendation = "MOMENTUM KÖP 🚀"
                     temp_ultra_köp.append({
-                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "ATR": round(atr_varde, 2)
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
+                        "RSI": round(rsi, 1), "RVOL": f"{rvol:.1f}x", "Stop Loss": stop_loss, "Target": target
                     })
                 
-                # Regel 2: Översåld dipp i sund trend (Köp dippen)
-                elif ema_snabb > ema_langsam and rsi <= 40:
+                # Regel 2: Dipp-köp över EMA50
+                elif ema_snabb > ema_langsam and rsi <= 42 and pris > ema_langsam:
                     rekommendation = "DIPP KÖP 📈"
                     temp_rek_köp.append({
-                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation, "RSI": round(rsi, 1), "ATR": round(atr_varde, 2)
+                        "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2),
+                        "RSI": round(rsi, 1), "Stop Loss": stop_loss, "Target": target
                     })
                 
-                # Regel 3: Helt utbränd och överköpt rörelse (Säljläge/Undvik)
                 elif rsi >= 75:
                     rekommendation = "ÖVERKÖPT / SÄLJ 🔥"
 
                 temp_alla.append({
                     "Ticker": ticker, "Aktie": fullt_namn, "Pris": round(pris, 2), "Rekommendation": rekommendation,
-                    "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x", "ATR": round(atr_varde, 2)
+                    "Senaste 5m %": f"{utveckling_bar:+.2f}%", "RSI": round(rsi, 1), "RVOL": f"{rvol:.2f}x",
+                    "VWAP": round(vwap_varde, 2), "ATR": round(atr_varde, 2)
                 })
-            except Exception as e:
+            except Exception:
                 continue
 
-    st.session_state.ultra_köp = temp_ultra_köp
-    st.session_state.rek_köp = temp_rek_köp
-    st.session_state.alla_aktier = temp_alla
-    st.session_state.har_skannat = True
+        st.session_state.skannings_resultat = {
+            "ultra": temp_ultra_köp,
+            "dipp": temp_rek_köp,
+            "alla": temp_alla
+        }
+        st.session_state.sparad_data = sparad_df_dict
+        
     progress_bar.empty()
     status_text.empty()
 
-# --- PRESENTATION PÅ SKÄRMEN ---
-if st.session_state.har_skannat:
-    st.success("🚀 ULTRA-MOMENTUM (Högsta prio för Utbrottshandel)")
-    if st.session_state.ultra_köp: 
-        st.dataframe(pd.DataFrame(st.session_state.ultra_köp), use_container_width=True)
+# --- PRESENTATION OCH GRAFER ---
+if st.session_state.skannings_resultat:
+    res = st.session_state.skannings_resultat
+    
+    st.subheader("🚀 MOMENTUM KÖP (Utbrott bekräftade av VWAP & Volym)")
+    if res["ultra"]: 
+        st.dataframe(pd.DataFrame(res["ultra"]), use_container_width=True)
     else: 
-        st.info("Inga utbrott med hög volym hittades just nu. Sök efter köpvägda dippar nedan!")
+        st.info("Inga starka momentum-utbrott hittades just nu.")
         
     st.write("---")
-    st.info("📈 INTRADAY DIPP-KÖP (Översålda i stabil trend)")
-    if st.session_state.rek_köp: 
-        st.dataframe(pd.DataFrame(st.session_state.rek_köp), use_container_width=True)
+    st.subheader("📈 INTRADAY DIPP-KÖP (Översålda i upptrend)")
+    if res["dipp"]: 
+        st.dataframe(pd.DataFrame(res["dipp"]), use_container_width=True)
     else: 
-        st.info("Inga tillfälliga dippar hittades i de rådande upptrenderna.")
+        st.info("Inga dipp-köpsignaler hittades för tillfället.")
         
     st.write("---")
-    st.subheader("📊 Komplett Översikt (Sorterad efter hetaste signalerna först)")
-    if st.session_state.alla_aktier:
-        df_visa = pd.DataFrame(st.session_state.alla_aktier)
+    st.subheader("📊 Översikt Alla Aktier")
+    if res["alla"]:
+        df_visa = pd.DataFrame(res["alla"])
+        sortering = {"MOMENTUM KÖP 🚀": 0, "DIPP KÖP 📈": 1, "Avvakta 🟡": 2, "ÖVERKÖPT / SÄLJ 🔥": 3}
+        df_visa['prio'] = df_visa['Rekommendation'].map(sortering)
+        df_visa = df_visa.sort_values(by="prio").drop(columns=['prio'])
+        st.dataframe(df_visa, use_container_width=True, height=350)
+
+    # --- INTERAKTIV CANDLESTICK-GRAF ---
+    st.write("---")
+    st.subheader("📈 Visuell Grafanalys")
+    
+    valda_tickers = list(st.session_state.sparad_data.keys())
+    if valda_tickers:
+        val_ticker = st.selectbox(
+            "Välj en aktie att granska i detalj:",
+            options=valda_tickers,
+            format_func=lambda x: f"{x} - {NAMN_MAPPNING.get(x, x)}"
+        )
         
-        # Sorteringslogik för att lägga Köpsignaler högst upp och Sälj/Avvakta längst ner
-        sorterings_ordning = {"MOMENTUM KÖP 🚀": 0, "DIPP KÖP 📈": 1, "Avvakta 🟡": 2, "ÖVERKÖPT / SÄLJ 🔥": 3}
-        df_visa['prio'] = df_visa['Rekommendation'].map(sorterings_ordning)
-        df_visa = df_visa.sort_values(by="prio", ascending=True).drop(columns=['prio'])
-        
-        st.dataframe(df_visa, use_container_width=True, height=500)
+        if val_ticker in st.session_state.sparad_data:
+            chart_df = st.session_state.sparad_data[val_ticker].tail(80)  # Visa de senaste 80 barerna (5m)
+
+            fig = go.Figure()
+
+            # Candlesticks
+            fig.add_trace(go.Candlestick(
+                x=chart_df.index,
+                open=chart_df['Open'],
+                high=chart_df['High'],
+                low=chart_df['Low'],
+                close=chart_df['Close'],
+                name="Pris (5m)"
+            ))
+
+            # EMA 20 Linje
+            fig.add_trace(go.Scatter(
+                x=chart_df.index, y=chart_df['EMA_Snabb'],
+                line=dict(color='orange', width=1.5), name="EMA 20"
+            ))
+
+            # EMA 50 Linje
+            fig.add_trace(go.Scatter(
+                x=chart_df.index, y=chart_df['EMA_Langsam'],
+                line=dict(color='blue', width=1.5), name="EMA 50"
+            ))
+
+            # VWAP Linje
+            fig.add_trace(go.Scatter(
+                x=chart_df.index, y=chart_df['VWAP'],
+                line=dict(color='purple', width=2, dash='dash'), name="VWAP"
+            ))
+
+            fig.update_layout(
+                title=f"Intraday 5m-diagram för {NAMN_MAPPNING.get(val_ticker, val_ticker)} ({val_ticker})",
+                yaxis_title="Pris",
+                xaxis_rangeslider_visible=False,
+                template="plotly_dark",
+                height=500
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
