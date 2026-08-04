@@ -3,11 +3,22 @@ import yfinance as yf
 import pandas as pd
 import ta
 import numpy as np
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+# Förbered NLTK VADER för sentimentanalys (laddas ner automatiskt vid behov)
+try:
+    nltk.data.find('sentiment/vader_lexicon.zip')
+except LookupError:
+    nltk.download('vader_lexicon', quiet=True)
 
 # --- SIDKONFIGURATION ---
-st.set_page_config(page_title="Aktierekommendationer Daytrading", layout="wide")
-st.title("⚡ Daytrading Köprekommendationer (Intraday)")
-st.caption("Optimerad skanner för momentum- och dipp-strategier med automatisk R/R-beräkning.")
+st.set_page_config(page_title="Swing Trading Skanner + Nyhetsfilter", layout="wide")
+st.title("📈 Swing Trading - Veckokandidater med Nyhetssensor")
+st.caption("Skanner för 2–5 dagars innehav baserad på dagsgrafer, marknadstrend och Google News-sentiment.")
 
 # --- AKTIER OCH NAMN ---
 NAMN_MAPPNING = {
@@ -30,34 +41,85 @@ AKTIER = list(NAMN_MAPPNING.keys())
 
 # --- INSTÄLLNINGAR (SIDEBAR) ---
 st.sidebar.header("⚙️ Filter & Inställningar")
-min_omsattning_5m = st.sidebar.number_input("Min omsättning 5m (SEK/USD)", value=10000, step=5000)
-min_rvol = st.sidebar.slider("Min RVOL (Relative Volume)", 1.0, 3.0, 1.5, 0.1)
-max_pris = st.sidebar.number_input("Max aktiepris", value=2000, step=100)
+min_dagsomsattning = st.sidebar.number_input("Min dagsomsättning (SEK/USD)", value=1000000, step=500000)
+min_rvol = st.sidebar.slider("Min RVOL (Relativ Volym 20d)", 1.0, 3.0, 1.2, 0.1)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🛡️ Riskhantering (ATR)")
+st.sidebar.subheader("🌍 Smart Filtrering (Bakgrund)")
+krav_marknadstrend = st.sidebar.checkbox("Kräv att S&P 500 har positiv trend", value=True)
+krav_nyheter = st.sidebar.checkbox("Filtrera bort aktier med negativa nyheter", value=True)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🛡️ Risk & Target (Dags-ATR)")
 atr_sl_mult = st.sidebar.slider("Stop Loss (ATR-multipel)", 1.0, 3.0, 1.5, 0.1)
 atr_tp_mult = st.sidebar.slider("Target (ATR-multipel)", 1.5, 5.0, 2.5, 0.1)
 
+# --- HJÄLPFUNKTIONER FÖR ANALYS ---
+
+@st.cache_data(ttl=3600)  # Cachar kursdata i 1 timme
+def hamta_dagsdata(tickers_list):
+    alla_tickers_str = " ".join(tickers_list)
+    return yf.download(alla_tickers_str, period="1y", interval="1d", progress=False, group_by="ticker")
+
+@st.cache_data(ttl=1800) # Cachar marknadstrend i 30 minuter
+def ar_marknaden_positiv():
+    """Kollar om S&P 500 ligger över sitt 50-dagars glidande medelvärde."""
+    try:
+        sp500 = yf.Ticker("^GSPC").history(period="60d")
+        if len(sp500) < 50:
+            return True
+        sma_50 = sp500['Close'].rolling(50).mean().iloc[-1]
+        senaste_pris = sp500['Close'].iloc[-1]
+        return senaste_pris >= sma_50
+    except Exception:
+        return True  # Vid fel slår vi inte ut skannern
+
+@st.cache_data(ttl=1800) # Cachar nyhetssentiment i 30 minuter
+def ar_nyhetssentiment_ok(bolagsnamn):
+    """Hämtar 5 senaste nyheterna från Google News och räknar ut sentiment."""
+    try:
+        query = urllib.parse.quote(f"{bolagsnamn} stock news")
+        url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            xml_data = response.read()
+        
+        root = ET.fromstring(xml_data)
+        titlar = [item.find('title').text for item in root.findall('.//item')[:5]]
+        
+        if not titlar:
+            return True # Inga nyheter är neutralt
+        
+        sia = SentimentIntensityAnalyzer()
+        scores = [sia.polarity_scores(t)['compound'] for t in titlar]
+        snitt_score = sum(scores) / len(scores)
+        
+        # True om snitt-sentimentet inte är tydligt negativt (gräns på -0.05)
+        return snitt_score >= -0.05
+    except Exception:
+        return True # Vid anslutningsfel släpper vi igenom aktien
+
 # --- SKANNING ---
-if st.button("Hämta Rekommendationer 🚀", use_container_width=True):
-    temp_momentum = []
+if st.button("Hämta Veckokandidater 🚀", use_container_width=True):
+    temp_trend = []
     temp_dipp = []
 
-    alla_tickers_str = " ".join(AKTIER)
-    with st.spinner("Hämtar marknadsdata och beräknar indikatorer..."):
-        try:
-            stort_df = yf.download(alla_tickers_str, period="5d", interval="5m", progress=False, group_by="ticker")
-        except Exception as e:
-            st.error(f"Fel vid hämtning av data: {e}")
-            stort_df = pd.DataFrame()
+    # 1. Kontrollera Omvärldsläget
+    marknadstrend_ok = ar_marknaden_positiv() if krav_marknadstrend else True
+    
+    if krav_marknadstrend and not marknadstrend_ok:
+        st.warning("⚠️ Breda marknaden (S&P 500) ligger under sitt 50-dagars medelvärde. Skanningen är mer restriktiv.")
+
+    with st.spinner("Hämtar marknadsdata, beräknar indikatorer och utvärderar nyheter..."):
+        stort_df = hamta_dagsdata(AKTIER)
 
     if not stort_df.empty:
         for ticker in AKTIER:
             try:
+                fullt_namn = NAMN_MAPPNING[ticker]
                 valuta = "SEK" if ticker.endswith(".ST") else "USD"
                 
-                # Säker uthämtning av ticker-dataframe
                 if isinstance(stort_df.columns, pd.MultiIndex):
                     if ticker not in stort_df.columns.levels[0]:
                         continue
@@ -67,7 +129,7 @@ if st.button("Hämta Rekommendationer 🚀", use_container_width=True):
 
                 df_ticker = df_ticker.dropna(subset=['Open', 'High', 'Low', 'Close', 'Volume'])
 
-                if len(df_ticker) < 50:
+                if len(df_ticker) < 60:
                     continue
 
                 close_ser = df_ticker['Close'].squeeze()
@@ -78,34 +140,22 @@ if st.button("Hämta Rekommendationer 🚀", use_container_width=True):
                 pris = float(close_ser.iloc[-1])
                 vol = float(vol_ser.iloc[-1])
 
-                if pris > max_pris or pris <= 0:
+                # Omsättningsfilter (senaste 10 dagarnas snitt)
+                snitt_dagsomsattning = (close_ser * vol_ser).tail(10).mean()
+                if snitt_dagsomsattning < min_dagsomsattning:
                     continue
 
-                # Omsättningsfilter (senaste 5 periodernas snitt)
-                if (close_ser * vol_ser).tail(5).mean() < min_omsattning_5m:
-                    continue
-
-                # Indikatorer (beräknas på HELA datamängden för exakthet)
+                # Teknisk analys på dagsgrafen
                 rsi = float(ta.momentum.rsi(close_ser, window=14).iloc[-1])
-                v_snitt = float(vol_ser.rolling(window=10).mean().iloc[-1])
-                ema_snabb = float(ta.trend.ema_indicator(close_ser, window=20).iloc[-1])
-                ema_langsam = float(ta.trend.ema_indicator(close_ser, window=50).iloc[-1])
+                vol_snitt_20 = float(vol_ser.rolling(window=20).mean().iloc[-1])
+                ema_20 = float(ta.trend.ema_indicator(close_ser, window=20).iloc[-1])
+                sma_50 = float(ta.trend.sma_indicator(close_ser, window=50).iloc[-1])
                 atr_varde = float(ta.volatility.average_true_range(high_ser, low_ser, close_ser, window=14).iloc[-1])
 
-                # VWAP (Beräknas korrekt per dag)
-                tz_namn = "Europe/Stockholm" if ticker.endswith(".ST") else "America/New_York"
-                if df_ticker.index.tz is None:
-                    lokalt_index = df_ticker.index.tz_localize("UTC").tz_convert(tz_namn)
-                else:
-                    lokalt_index = df_ticker.index.tz_convert(tz_namn)
-
-                tp = (high_ser + low_ser + close_ser) / 3
-                vwap_varde = float(((tp * vol_ser).groupby(lokalt_index.date).cumsum() / vol_ser.groupby(lokalt_index.date).cumsum()).iloc[-1])
-
-                if pd.isna(rsi) or pd.isna(ema_snabb) or pd.isna(vwap_varde) or np.isinf(vwap_varde):
+                if pd.isna(rsi) or pd.isna(ema_20) or pd.isna(sma_50) or pd.isna(atr_varde):
                     continue
 
-                rvol = (vol / v_snitt) if (pd.notna(v_snitt) and v_snitt > 0) else 1.0
+                rvol = (vol / vol_snitt_20) if (pd.notna(vol_snitt_20) and vol_snitt_20 > 0) else 1.0
 
                 # Risk / Reward beräkning
                 stop_loss = pris - (atr_sl_mult * atr_varde)
@@ -114,46 +164,53 @@ if st.button("Hämta Rekommendationer 🚀", use_container_width=True):
                 reward = target - pris
                 rr_kvot = round(reward / risk, 2) if risk > 0 else 0.0
 
-                fullt_namn = NAMN_MAPPNING[ticker]
+                # Identifiera om det finns teknisk köpsignal
+                is_momentum = (pris > ema_20 and ema_20 > sma_50 and (50 <= rsi <= 68) and rvol >= min_rvol)
+                is_dipp = (pris > sma_50 and rsi <= 45 and pris <= ema_20)
 
-                data_punkt = {
-                    "Aktie": fullt_namn,
-                    "Ticker": ticker,
-                    "Pris": f"{pris:.2f} {valuta}",
-                    "RSI": round(rsi, 1),
-                    "RVOL_num": round(rvol, 2),
-                    "RVOL": f"{rvol:.1f}x",
-                    "R/R Kvot": f"1:{rr_kvot:.2f}",
-                    "Stop Loss": f"{stop_loss:.2f} {valuta}",
-                    "Target": f"{target:.2f} {valuta}"
-                }
+                # Om varken momentum eller dipp uppfylls, gå vidare direkt
+                if not (is_momentum or is_dipp):
+                    continue
 
-                # 1. Momentum Köp
-                if pris > vwap_varde and pris > ema_snabb and ema_snabb > ema_langsam and rvol >= min_rvol and (50 <= rsi <= 70):
-                    temp_momentum.append(data_punkt)
+                # Bakgrundstest: Omvärldstrend och Nyhetssentiment
+                if marknadstrend_ok:
+                    nyhets_ok = ar_nyhetssentiment_ok(fullt_namn) if krav_nyheter else True
+                    
+                    if nyhets_ok:
+                        data_punkt = {
+                            "Aktie": fullt_namn,
+                            "Ticker": ticker,
+                            "Pris": f"{pris:.2f} {valuta}",
+                            "RSI (14)": round(rsi, 1),
+                            "RVOL": f"{rvol:.1f}x",
+                            "R/R Kvot": f"1:{rr_kvot:.2f}",
+                            "Stop Loss": f"{stop_loss:.2f} {valuta}",
+                            "Target": f"{target:.2f} {valuta}",
+                            "Förv. Vinst/aktie": f"{(target - pris):.2f} {valuta}",
+                            "RVOL_num": round(rvol, 2)
+                        }
 
-                # 2. Dipp Köp
-                vol_dämpad = vol < v_snitt
-                if ema_snabb > ema_langsam and rsi <= 42 and pris > ema_langsam and vol_dämpad:
-                    temp_dipp.append(data_punkt)
+                        if is_momentum:
+                            temp_trend.append(data_punkt)
+                        elif is_dipp:
+                            temp_dipp.append(data_punkt)
 
-            except Exception as e:
-                # Skriv ut ev. fel under felsökning om en ticker misslyckas
+            except Exception:
                 continue
 
     # --- VISNING AV RESULTAT ---
-    st.subheader("🚀 Momentum Köp")
-    if temp_momentum:
-        df_mom = pd.DataFrame(temp_momentum)
+    st.subheader("🚀 Trend-Momentum (Köp i stark upptrend)")
+    if temp_trend:
+        df_mom = pd.DataFrame(temp_trend)
         df_mom = df_mom.sort_values(by="RVOL_num", ascending=False).drop(columns=["RVOL_num"])
         st.dataframe(df_mom, use_container_width=True)
     else:
-        st.info("Inga momentum-kandidater just nu.")
+        st.info("Inga momentum-kandidater just nu som klarade de tekniska och nyhetsbaserade filtren.")
 
-    st.subheader("📈 Dipp Köp")
+    st.subheader("📉 Rekyl i Upptrend (Dipp-köp)")
     if temp_dipp:
         df_dipp = pd.DataFrame(temp_dipp)
-        df_dipp = df_dipp.sort_values(by="RSI", ascending=True).drop(columns=["RVOL_num"])
+        df_dipp = df_dipp.sort_values(by="RSI (14)", ascending=True).drop(columns=["RVOL_num"])
         st.dataframe(df_dipp, use_container_width=True)
     else:
-        st.info("Inga dipp-kandidater just nu.")
+        st.info("Inga dipp-kandidater just nu som klarade de tekniska och nyhetsbaserade filtren.")
