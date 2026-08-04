@@ -116,9 +116,8 @@ def ar_marknaden_positiv():
 def ar_nyhetssentiment_ok(bolagsnamn):
     """Hämtar engelskspråkiga nyheter via Google RSS och beräknar sentiment med VADER."""
     try:
-        time.sleep(random.uniform(0.1, 0.3))  # Undvik rate-limiting vid parallellkörning
+        time.sleep(random.uniform(0.1, 0.4))
         
-        # Tvinga engelsk sökning för bättre kompatibilitet med VADER Lexicon
         query = urllib.parse.quote(f'"{bolagsnamn}" stock market analysis news')
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         
@@ -147,7 +146,7 @@ def ar_nyhetssentiment_ok(bolagsnamn):
 def har_rapport_snart(ticker_symbol):
     """Robust kontroll om bolaget har rapport de närmsta 7 dagarna."""
     try:
-        time.sleep(random.uniform(0.1, 0.3))  # Minska risken för Yahoo 429 Rate Limit
+        time.sleep(random.uniform(0.2, 0.5))
         t = yf.Ticker(ticker_symbol)
         cal = None
         
@@ -226,7 +225,6 @@ if st.button("Hämta Veckokandidater 🚀", use_container_width=True):
                 low_ser = get_series(df_ticker, 'Low')
                 vol_ser = get_series(df_ticker, 'Volume')
 
-                # Linjera och rensa alla serier samtidigt
                 combined = pd.concat([close_ser, high_ser, low_ser, vol_ser], axis=1).dropna()
                 combined.columns = ['Close', 'High', 'Low', 'Volume']
 
@@ -241,12 +239,18 @@ if st.button("Hämta Veckokandidater 🚀", use_container_width=True):
                 pris = float(close_ser.iloc[-1])
                 vol = float(vol_ser.iloc[-1])
 
-                # 1. VECKOTREND (EXKLUDERA PÅGÅENDE VECKA FÖR STABIL VECKOSTÄNGNING)
+                # 1. VECKOTREND (KONTROLLERA VECKOSTÄNGNING)
                 if krav_veckotrend:
                     df_weekly = close_ser.resample('W-FRI').last().dropna()
-                    # Använd .iloc[:-1] för att enbart utvärdera helt avslutade veckor
-                    if len(df_weekly) > 20:
+                    
+                    # Om sista dagen i datan är fredag eller senare, ta bort sista pågående veckan
+                    idag_weekday = datetime.date.today().weekday()
+                    if idag_weekday < 4 and len(df_weekly) > 1:
                         df_weekly_closed = df_weekly.iloc[:-1]
+                    else:
+                        df_weekly_closed = df_weekly
+
+                    if len(df_weekly_closed) > 20:
                         vecko_ema_20 = float(ta.trend.ema_indicator(df_weekly_closed, window=20).iloc[-1])
                         if pd.isna(vecko_ema_20) or pris < vecko_ema_20:
                             continue
@@ -280,7 +284,7 @@ if st.button("Hämta Veckokandidater 🚀", use_container_width=True):
                 hogsta_52w = float(high_ser.tail(252).max())
                 nara_motstand = "⚠️ Ja" if target > hogsta_52w else "Nej"
 
-                # POSITIONSSIZERING (RÄTTAD VALUTAKONVERTERING)
+                # POSITIONSSIZERING
                 max_kronor_risk = portfolj_kapital * risk_procent
                 risk_per_aktie_sek = risk_per_aktie * (1.0 if ar_sek else usd_sek_kurs)
                 
@@ -332,7 +336,8 @@ if st.button("Hämta Veckokandidater 🚀", use_container_width=True):
                         return None
                     return cand
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                # Reducerat max_workers till 2 för att minska risken för Yahoo-rate limits
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     resultat = list(executor.map(utfor_extra_kontroller, kandidater_for_extra_koll))
                     stora_kandidater = [c for c in resultat if c is not None]
 
